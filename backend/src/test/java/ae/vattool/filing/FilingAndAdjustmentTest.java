@@ -554,6 +554,48 @@ class FilingAndAdjustmentTest extends IntegrationTest {
     }
 
     @Test
+    void aSecondCorrectionPostsOnlyTheNewDifferenceNotTheFirstOneAgain() throws Exception {
+        s.toFiled(entity, period);
+        lateSale(entity, "20000.00", "1000.00");
+        JsonNode first = s.client.post(s.reviewer, "/api/periods/" + period + "/corrections", Map.of("reason", "First miss"));
+        UUID target = UUID.fromString(first.get("targetPeriodId").asString());
+
+        lateSale(entity, "2000.00", "100.00");
+        JsonNode second = s.client.post(s.reviewer, "/api/periods/" + period + "/corrections", Map.of("reason", "Second miss"));
+
+        assertThat(new BigDecimal(second.get("taxDifferenceAed").asString())).isEqualByComparingTo("100.00");
+        // 1,000 and 100 in total. Measuring against the filed return again would give 2,100.
+        assertThat(new BigDecimal(box(target, "1b", "adjustment"))).isEqualByComparingTo("1100.00");
+        assertThat(new BigDecimal(box(target, "14", "vat"))).isEqualByComparingTo("1100.00");
+    }
+
+    @Test
+    void aSecondCorrectionDoesNotReverseAFigureEnteredByHandInTheFirst() throws Exception {
+        s.toFiled(entity, period);
+        String ev = s.evidence(entity, period, "calc.pdf");
+        JsonNode first = s.client.post(s.reviewer, "/api/periods/" + period + "/corrections", Map.of("reason", "Input missed", "evidenceId", ev,
+                "manualChanges", List.of(Map.of("box", "9", "vatChange", "100.00"))));
+        UUID target = UUID.fromString(first.get("targetPeriodId").asString());
+
+        lateSale(entity, "2000.00", "100.00");
+        JsonNode second = s.client.post(s.reviewer, "/api/periods/" + period + "/corrections", Map.of("reason", "Sale missed"));
+
+        assertThat(new BigDecimal(second.get("taxDifferenceAed").asString())).isEqualByComparingTo("100.00");
+        assertThat(new BigDecimal(box(target, "9", "adjustment"))).isEqualByComparingTo("100.00");
+        assertThat(new BigDecimal(box(target, "1b", "adjustment"))).isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    void withNothingNewSinceTheLastCorrectionThereIsNothingToCorrect() throws Exception {
+        s.toFiled(entity, period);
+        lateSale(entity, "20000.00", "1000.00");
+        s.client.post(s.reviewer, "/api/periods/" + period + "/corrections", Map.of("reason", "First miss"));
+
+        s.client.postRaw(s.reviewer, "/api/periods/" + period + "/corrections", Map.of("reason", "Again"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("NO_DIFFERENCE"));
+    }
+
+    @Test
     void aCorrectionOnABoxWithNoAdjustmentColumnPostsToAnAdjustableBox() throws Exception {
         s.toFiled(entity, period);
         String ev = s.evidence(entity, period, "calc.pdf");

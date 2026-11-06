@@ -12,11 +12,14 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -33,6 +36,34 @@ public class Ledger {
     public enum WriteResult { INSERTED, REVISED, UNCHANGED }
 
     public record Written(WriteResult result, UUID lineId, UUID periodId) {}
+
+    /**
+     * Saves database round trips while one file loads, which is what lets a row-by-row load meet the
+     * NFR-07 rate. Reference data may be read once per file: a rule pack or mapping published during
+     * a load applies from the next load, and each line records the version it used. Locks and new
+     * documents last only for one transaction, so newTransaction() must be called at the start of each.
+     */
+    public static final class WriteCache {
+        private final Map<LocalDate, RulePackStore.ActivePack> packs = new HashMap<>();
+        private final Map<LocalDate, Optional<MappingService.VersionWithEntries>> mappings = new HashMap<>();
+        private final Map<LocalDate, Optional<TaxPeriod>> periods = new HashMap<>();
+        private final Map<String, Boolean> designatedZones = new HashMap<>();
+        private BigDecimal defaultRecovery;
+        private final Set<UUID> sharedPeriods = new HashSet<>();
+        private final Set<UUID> requestedPeriods = new HashSet<>();
+        private final Set<UUID> newDocuments = new HashSet<>();
+
+        public void newTransaction() {
+            sharedPeriods.clear();
+            requestedPeriods.clear();
+            newDocuments.clear();
+        }
+
+        /** A document created in this transaction cannot already have lines, so no lookup is needed. */
+        public void documentCreated(UUID id) {
+            newDocuments.add(id);
+        }
+    }
 
     private final JdbcClient jdbc;
     private final RulePackStore packs;
@@ -54,38 +85,68 @@ public class Ledger {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public Written writeSourceLine(LineInput in) {
-        TaxPeriod period = calendar.periodFor(in.filerEntityId(), in.taxPoint())
+        WriteCache cache = new WriteCache();
+        return writeSourceLine(in, cache);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Written writeSourceLine(LineInput in, WriteCache cache) {
+        TaxPeriod period = periodFor(in.filerEntityId(), in.taxPoint(), cache)
                 .orElseThrow(() -> DomainException.invalid("BEFORE_FIRST_PERIOD",
                         "Tax point " + in.taxPoint() + " is before the entity's first tax period"));
 
         // Held until commit, so approving this period waits for this write and then sees it. The
         // lock is taken before reading the current line for the same reason.
-        jdbc.sql("SELECT id FROM tax_period WHERE id = ? FOR SHARE").param(period.id()).query(UUID.class).single();
+        lockShared(period.id(), cache);
 
         String taxHash = taxHash(in);
-        Optional<CurrentLine> current = currentLine(in.documentId(), in.lineNo());
+        Optional<CurrentLine> current = cache.newDocuments.contains(in.documentId())
+                ? Optional.empty()
+                : currentLine(in.documentId(), in.lineNo());
         if (current.isPresent() && current.get().taxHash().equals(taxHash)) {
             return new Written(WriteResult.UNCHANGED, current.get().id(), period.id());
         }
 
-        RulePackStore.ActivePack pack = packs.forDate(in.taxPoint());
-        Classified c = classify(pack.definition(), in);
+        RulePackStore.ActivePack pack = cache.packs.computeIfAbsent(in.taxPoint(), packs::forDate);
+        Classified c = classify(pack.definition(), in, cache);
         UUID logicalId = current.map(CurrentLine::logicalLineId).orElseGet(UUID::randomUUID);
         int revision = current.map(l -> l.revision() + 1).orElse(1);
 
-        current.ifPresent(l -> supersede(l.id(), l.taxYear(), l.periodId()));
+        current.ifPresent(l -> supersede(l.id(), l.taxYear(), l.periodId(), cache));
 
         UUID id = UUID.randomUUID();
         insert(id, logicalId, revision, in, period, c, pack.meta().version(), taxHash);
-        requestRecompute(period.id());
+        requestRecompute(period.id(), cache);
         return new Written(current.isPresent() ? WriteResult.REVISED : WriteResult.INSERTED, id, period.id());
+    }
+
+    /** The period for a date, read once per file. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<TaxPeriod> periodFor(UUID filerId, LocalDate date, WriteCache cache) {
+        return cache.periods.computeIfAbsent(date, d -> calendar.periodFor(filerId, d));
+    }
+
+    private void lockShared(UUID periodId, WriteCache cache) {
+        if (cache.sharedPeriods.add(periodId)) {
+            jdbc.sql("SELECT id FROM tax_period WHERE id = ? FOR SHARE").param(periodId).query(UUID.class).single();
+        }
+    }
+
+    private void requestRecompute(UUID periodId, WriteCache cache) {
+        lockShared(periodId, cache);
+        if (cache.requestedPeriods.add(periodId)) {
+            jdbc.sql("""
+                    INSERT INTO period_recompute_request (period_id, tenant_id) VALUES (?, ?)
+                    ON CONFLICT (period_id) DO UPDATE SET requested_at = now()
+                    """).params(periodId, RequestContext.requireTenant()).update();
+        }
     }
 
     /** Supersedes one current line with no replacement, for a voided document. */
     @Transactional(propagation = Propagation.MANDATORY)
     public int voidDocumentLine(UUID documentId, int lineNo) {
         Optional<CurrentLine> current = currentLine(documentId, lineNo);
-        current.ifPresent(l -> supersede(l.id(), l.taxYear(), l.periodId()));
+        current.ifPresent(l -> supersede(l.id(), l.taxYear(), l.periodId(), new WriteCache()));
         return current.isPresent() ? 1 : 0;
     }
 
@@ -105,7 +166,7 @@ public class Ledger {
         BigDecimal recoverable = Classifier.recoverable(line.direction(), treatment, blockedCategory, memo, vat,
                 pct == null ? BigDecimal.valueOf(100) : pct);
         int taxYear = line.taxPoint().getYear();
-        supersede(line.id(), taxYear, line.periodId());
+        supersede(line.id(), taxYear, line.periodId(), new WriteCache());
         UUID id = UUID.randomUUID();
         // A person has now decided, so earlier review flags no longer apply to this line.
         jdbc.sql("""
@@ -192,27 +253,32 @@ public class Ledger {
                 """).params(documentId, lineNo).query(CurrentLine.class).optional();
     }
 
-    private void supersede(UUID id, int taxYear, UUID periodId) {
+    private void supersede(UUID id, int taxYear, UUID periodId, WriteCache cache) {
         jdbc.sql("UPDATE tax_line SET superseded_at = now() WHERE tenant_id = ? AND tax_year = ? AND id = ?")
                 .params(RequestContext.requireTenant(), taxYear, id).update();
-        requestRecompute(periodId);
+        requestRecompute(periodId, cache);
     }
 
     private record Classified(Classifier.Outcome outcome, BigDecimal vatAed, BigDecimal recoverable,
                               BigDecimal recoveryPct, UUID mappingVersionId) {}
 
-    private Classified classify(RulePackDefinition def, LineInput in) {
-        Optional<MappingService.VersionWithEntries> mapping = mappings.forDate(in.filerEntityId(), in.taxPoint());
+    private Classified classify(RulePackDefinition def, LineInput in, WriteCache cache) {
+        Optional<MappingService.VersionWithEntries> mapping =
+                cache.mappings.computeIfAbsent(in.taxPoint(), d -> mappings.forDate(in.filerEntityId(), d));
         Classifier.Mapped mapped = in.forcedTreatment() != null
                 ? new Classifier.Mapped(in.forcedTreatment(), null, null)
                 : mergeMapping(mapping, in);
-        boolean counterpartyDz = counterpartyDesignatedZone(in.counterpartyTrn());
+        boolean counterpartyDz = in.counterpartyTrn() != null
+                && cache.designatedZones.computeIfAbsent(in.counterpartyTrn(), this::counterpartyDesignatedZone);
         Classifier.Outcome outcome = Classifier.classify(def, new Classifier.Facts(
                 in.direction(), in.sourceSystem(), in.goodsOrServices(), in.counterpartyCountry(),
                 in.counterpartyTrn() != null, counterpartyDz, in.establishmentDesignatedZone(), in.description(),
                 in.netAed(), in.vatAed(), mapped));
         BigDecimal vat = Classifier.vatToAccount(def, in.direction(), outcome.treatment(), in.netAed(), in.vatAed());
-        BigDecimal pct = in.recoveryPct() != null ? in.recoveryPct() : defaultRecovery(in.filerEntityId());
+        if (cache.defaultRecovery == null) {
+            cache.defaultRecovery = defaultRecovery(in.filerEntityId());
+        }
+        BigDecimal pct = in.recoveryPct() != null ? in.recoveryPct() : cache.defaultRecovery;
         BigDecimal recoverable = Classifier.recoverable(in.direction(), outcome.treatment(), outcome.blockedCategory(),
                 outcome.memo(), vat, pct);
         return new Classified(outcome, vat, recoverable, pct, mapping.map(m -> m.version().id()).orElse(null));
@@ -246,9 +312,6 @@ public class Ledger {
     }
 
     private boolean counterpartyDesignatedZone(String trn) {
-        if (trn == null) {
-            return false;
-        }
         return jdbc.sql("SELECT designated_zone FROM counterparty WHERE trn = ?").param(trn)
                 .query(Boolean.class).optional().orElse(false);
     }

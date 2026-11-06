@@ -109,7 +109,7 @@ public class ReconciliationService {
                 .param("period", periodId).param("trigger", trigger).param("version", version.id())
                 .param("pack", pack.meta().version()).param("summary", JSON.writeValueAsString(byRule)).param("started", started)
                 .update();
-        metrics.counter("vat.recon.runs", "trigger", trigger).increment();
+        metrics.counter("vat.recon.runs", "tenant", RequestContext.requireTenant().toString(), "trigger", trigger).increment();
         audit.record("RECONCILIATION_RUN", "RECON_RUN", runId, period.entityId(), null,
                 Map.of("findings", findings.size(), "blockingOpen", blocking, "warningsOpen", warnings, "reopened", counts[1],
                         "closedByRun", counts[0]), trigger);

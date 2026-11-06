@@ -1,0 +1,31 @@
+# Prometheus alert rules for NFR-14. Load into your Prometheus; the thresholds are starting points.
+groups:
+  - name: vat-tool
+    rules:
+      - alert: ReconciliationRunsFailing
+        expr: increase(vat_recon_failed_total[15m]) > 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: Period refresh or reconciliation is failing, so returns may be out of date.
+      - alert: EinvoiceIngestionLagging
+        expr: histogram_quantile(0.95, sum(rate(vat_einvoice_lag_seconds_bucket[5m])) by (le)) > 300
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: E-invoice events are taking more than 5 minutes to reach the VAT tool.
+      - alert: EinvoiceEventsRejected
+        expr: increase(vat_einvoice_events_total{result=~"unreadable|invalid"}[15m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: E-invoice events are going to the dead letter topic. Check einvoice.events.v1-dlt.
+      - alert: DeadlineMailFailing
+        expr: increase(vat_deadline_mail_failed_total[1h]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: Deadline alert emails are failing. In-app notifications still go out.
+      - alert: IngestionRowsRejectedSpike
+        expr: increase(vat_ingest_rows_total{result="rejected"}[1h]) > 1000
+        labels: { severity: warning }
+        annotations:
+          summary: More than 1,000 rows were rejected at load in the last hour.

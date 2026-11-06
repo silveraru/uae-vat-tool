@@ -4,6 +4,7 @@ import ae.vattool.platform.tenancy.RequestContext;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
@@ -39,7 +40,8 @@ public class DeadlineAlertJob {
     private final TransactionTemplate tx;
     private final JavaMailSender mail;
     private final MeterRegistry metrics;
-    private final Clock clock = Clock.systemUTC();
+    // Deadlines are UAE calendar days, wherever the server runs.
+    private final Clock clock = Clock.system(ZoneId.of("Asia/Dubai"));
     private final boolean enabled;
 
     public DeadlineAlertJob(JdbcClient jdbc, TransactionTemplate tx, JavaMailSender mail, MeterRegistry metrics,

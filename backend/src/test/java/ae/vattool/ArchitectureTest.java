@@ -19,8 +19,13 @@ class ArchitectureTest {
                     "ae.vattool.masterdata..", "ae.vattool.ingestion..", "ae.vattool.ledger..",
                     "ae.vattool.rules..", "ae.vattool.returns..", "ae.vattool.adjustments..",
                     "ae.vattool.reconciliation..", "ae.vattool.workflow..", "ae.vattool.filing..",
-                    "ae.vattool.evidence..", "ae.vattool.portfolio..")
+                    "ae.vattool.evidence..", "ae.vattool.portfolio..", "ae.vattool.demo..")
             .allowEmptyShould(true);
+
+    @ArchTest
+    static final ArchRule nothingElseDependsOnDemoData = noClasses()
+            .that().resideOutsideOfPackage("ae.vattool.demo..")
+            .should().dependOnClassesThat().resideInAPackage("ae.vattool.demo..");
 
     @ArchTest
     static final ArchRule modulesHaveNoCycles = slices()

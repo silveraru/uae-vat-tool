@@ -183,12 +183,15 @@ public class DocumentMatcher {
                 """).param("filer", period.entityId()).param("period", period.id()).query(Proposal.class).list();
     }
 
-    /** A person accepts or rejects a proposal. Accepting one withdraws competing proposals. */
+    /**
+     * A person accepts or rejects a proposal. Accepting one withdraws competing proposals. The match
+     * must belong to the entity the caller was checked against: row-level security only separates tenants.
+     */
     @Transactional
-    public UUID decide(UUID matchId, boolean accept) {
-        record M(UUID documentId, UUID invoiceUuid, String status, UUID filerEntityId) {}
-        M m = jdbc.sql("SELECT document_id, invoice_uuid, status, filer_entity_id FROM doc_match WHERE id = ? FOR UPDATE")
-                .param(matchId).query(M.class).optional()
+    public void decide(UUID matchId, UUID entityId, boolean accept) {
+        record M(UUID documentId, UUID invoiceUuid, String status) {}
+        M m = jdbc.sql("SELECT document_id, invoice_uuid, status FROM doc_match WHERE id = ? AND filer_entity_id = ? FOR UPDATE")
+                .params(matchId, entityId).query(M.class).optional()
                 .orElseThrow(() -> DomainException.notFound("Match"));
         if (!"PROPOSED".equals(m.status())) {
             throw DomainException.conflict("MATCH_ALREADY_DECIDED", "This match has already been decided");
@@ -202,6 +205,5 @@ public class DocumentMatcher {
         }
         jdbc.sql("UPDATE doc_match SET status = :status, decided_by = :by, decided_at = now() WHERE id = :id")
                 .param("status", accept ? "CONFIRMED" : "REJECTED").param("by", actor).param("id", matchId).update();
-        return m.filerEntityId();
     }
 }

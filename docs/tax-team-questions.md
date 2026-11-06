@@ -16,3 +16,5 @@ pack is signed off. Answers usually change configuration in the rule pack, not c
 | 9 | Do the 1 Jan 2026 amendments change any calculation in the MVP? | Treated as no change in calculation: self-invoicing affects documents, the refund time limit affects COR-04 (Phase 2), and input denial for known evasion is a manual judgement. |
 | 10 | Please verify the five golden returns in `fixtures/golden`. | I computed the expected values, so they are not independent evidence. |
 | 11 | A correction to a box with no adjustment column (such as 3, 6, 7 or 10): where should it go in the next return? | It posts to the first output or input box that has an adjustment column, with a description naming the original box. |
+| 12 | When is reverse charge VAT accounted for on imported services and DRC purchases, when the supply date and invoice date fall in different periods? | A purchase follows its invoice date unless the file gives an explicit `tax_point_date`. |
+| 13 | Are the blocked input and designated zone text patterns in the rule pack right? They are my starting list. | Description matches block recovery and raise a warning for a person to confirm. |

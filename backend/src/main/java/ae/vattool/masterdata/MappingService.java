@@ -116,6 +116,12 @@ public class MappingService {
     }
 
     @Transactional(readOnly = true)
+    public boolean belongsTo(UUID versionId, UUID entityId) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM mapping_version WHERE id = ? AND entity_id = ?)")
+                .params(versionId, entityId).query(Boolean.class).single();
+    }
+
+    @Transactional(readOnly = true)
     public VersionWithEntries load(UUID versionId) {
         Version v = jdbc.sql(VERSION_SELECT + " WHERE id = ?").param(versionId).query(Version.class).optional()
                 .orElseThrow(() -> DomainException.notFound("Mapping version"));

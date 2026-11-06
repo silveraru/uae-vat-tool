@@ -52,6 +52,10 @@ public class RowProcessor {
         final Map<String, Integer> seenRows = new HashMap<>();
         Map<String, Establishment> establishments;
         UUID currentRowId;
+        final Ledger.WriteCache cache = new Ledger.WriteCache();
+        final Map<String, Optional<BigDecimal>> fxRates = new HashMap<>();
+        final Map<String, ChunkDoc> chunkDocs = new HashMap<>();
+        boolean openProblems;
 
         FileContext(LegalEntity filer, Kind kind, UUID batchId) {
             this.filer = filer;
@@ -61,6 +65,11 @@ public class RowProcessor {
     }
 
     record Establishment(UUID id, UUID entityId, String code, String emirate, boolean designatedZone) {}
+
+    /** A document already written in this transaction, with the header values it was written with. */
+    private record ChunkDoc(UUID id, String header) {}
+
+    private record UpsertedDoc(UUID id, boolean inserted) {}
 
     private record Outcome(String status, List<String> errors, String rowKey, UUID periodId, UUID documentId) {}
 
@@ -85,6 +94,11 @@ public class RowProcessor {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void processChunk(FileContext ctx, List<Map<String, String>> rows, int firstRowNo, Counts counts) {
+        ctx.cache.newTransaction();
+        ctx.chunkDocs.clear();
+        ctx.openProblems = jdbc.sql("""
+                SELECT EXISTS (SELECT 1 FROM ingest_row WHERE entity_id = ? AND status IN ('REJECTED', 'HELD') AND resolved_at IS NULL)
+                """).param(ctx.filer.id()).query(Boolean.class).single();
         int rowNo = firstRowNo;
         for (Map<String, String> row : rows) {
             ctx.currentRowId = UUID.randomUUID();
@@ -113,6 +127,7 @@ public class RowProcessor {
                 Map<String, String> row = readRaw(h.raw());
                 FileContext ctx = new FileContext(entityOfBatch(h.batchId()), Kind.valueOf(h.kind()), h.batchId());
                 ctx.currentRowId = h.id();
+                ctx.openProblems = true;
                 Outcome o = process(ctx, row);
                 if ("LOADED".equals(o.status()) || "UNCHANGED".equals(o.status())) {
                     jdbc.sql("""
@@ -212,17 +227,23 @@ public class RowProcessor {
             return voidLine(ctx, direction, "ERP", naturalKey, lineNo, rowKey);
         }
 
-        // A credit note reduces tax in the period it is issued, whatever the original's date.
+        // A credit note reduces tax in the period it is issued, whatever the original's date. Input
+        // tax is claimable once the invoice is held, so a purchase follows its invoice date; only
+        // sales use the earliest of supply, invoice and payment. An explicit tax point overrides both,
+        // for continuous supplies, goods on approval, and reverse charge timing (tax team question 12).
         boolean creditOrDebit = "CREDIT_NOTE".equals(docType) || "DEBIT_NOTE".equals(docType);
         LocalDate taxPoint = explicitTaxPoint != null ? explicitTaxPoint
-                : creditOrDebit ? docDate : earliest(docDate, supplyDate, paymentDate);
+                : creditOrDebit || "IN".equals(direction) ? docDate
+                : earliest(docDate, supplyDate, paymentDate);
 
-        Optional<BigDecimal> rate = fx(currency, taxPoint);
-        Optional<TaxPeriod> period = calendar.periodFor(ctx.filer.id(), taxPoint);
+        Optional<BigDecimal> rate = ctx.fxRates.computeIfAbsent(currency + "|" + taxPoint, k -> fx(currency, taxPoint));
+        Optional<TaxPeriod> period = ledger.periodFor(ctx.filer.id(), taxPoint, ctx.cache);
         if (period.isEmpty()) {
             return new Outcome("REJECTED", List.of("BEFORE_FIRST_PERIOD"), rowKey, null, null);
         }
         if (rate.isEmpty()) {
+            // Not remembered, so a rate loaded later in the same run is seen when the row is retried.
+            ctx.fxRates.remove(currency + "|" + taxPoint);
             return new Outcome("HELD", List.of("FX_RATE_MISSING:" + currency + ":" + taxPoint), rowKey, period.get().id(), null);
         }
         int sign = "CREDIT_NOTE".equals(docType) ? -1 : 1;
@@ -235,37 +256,53 @@ public class RowProcessor {
                 : "OUT".equals(direction) ? (trn == null ? "B2C" : "B2B") : null;
         UUID member = est != null ? est.entityId() : ctx.filer.id();
 
-        UUID documentId = jdbc.sql("""
-                INSERT INTO source_document (id, tenant_id, filer_entity_id, member_entity_id, source_system, direction, doc_type,
-                    doc_number, doc_date, natural_key, counterparty_trn, counterparty_name, counterparty_country, customer_type,
-                    original_doc_number, einvoice_uuid, posting_date, has_tax_invoice, agreed_payment_date, paid_date,
-                    paid_amount_aed, first_batch_id, last_batch_id)
-                VALUES (:id, :tenant, :filer, :member, 'ERP', :direction, :docType, :number, :date, :key, :trn, :name, :country,
-                    :customerType, :original, :uuid, :posting, :hasInvoice, :agreed, :paidDate, :paidAmount, :batch, :batch)
-                ON CONFLICT (tenant_id, filer_entity_id, source_system, direction, natural_key) DO UPDATE SET
-                    posting_date = EXCLUDED.posting_date, has_tax_invoice = EXCLUDED.has_tax_invoice,
-                    agreed_payment_date = EXCLUDED.agreed_payment_date, paid_date = EXCLUDED.paid_date,
-                    paid_amount_aed = EXCLUDED.paid_amount_aed, einvoice_uuid = COALESCE(EXCLUDED.einvoice_uuid, source_document.einvoice_uuid),
-                    original_doc_number = EXCLUDED.original_doc_number, counterparty_name = EXCLUDED.counterparty_name,
-                    last_batch_id = EXCLUDED.last_batch_id, voided_at = NULL
-                RETURNING id
-                """)
-                .param("id", UUID.randomUUID()).param("tenant", RequestContext.requireTenant()).param("filer", ctx.filer.id())
-                .param("member", member).param("direction", direction).param("docType", docType).param("number", docNumber)
-                .param("date", docDate).param("key", naturalKey).param("trn", trn).param("name", text(r.get("counterparty_name")))
-                .param("country", country).param("customerType", resolvedCustomerType)
-                .param("original", text(r.get("original_doc_number"))).param("uuid", uuid).param("posting", postingDate)
-                .param("hasInvoice", flag(r.get("has_tax_invoice"))).param("agreed", agreedDate).param("paidDate", paidDate)
-                .param("paidAmount", paidAmount == null ? null : toAed(paidAmount, rate.get()))
-                .param("batch", ctx.batchId)
-                .query(UUID.class).single();
+        // Lines of one document repeat its header, so it is written again only if the header differs.
+        BigDecimal paidAed = paidAmount == null ? null : toAed(paidAmount, rate.get());
+        String header = String.join("|", String.valueOf(postingDate), String.valueOf(flag(r.get("has_tax_invoice"))), String.valueOf(agreedDate),
+                String.valueOf(paidDate), String.valueOf(paidAed), String.valueOf(uuid), String.valueOf(r.get("original_doc_number")),
+                String.valueOf(r.get("counterparty_name")));
+        String docKey = direction + "|" + naturalKey;
+        ChunkDoc known = ctx.chunkDocs.get(docKey);
+        UUID documentId;
+        if (known != null && known.header().equals(header)) {
+            documentId = known.id();
+        } else {
+            UpsertedDoc doc = jdbc.sql("""
+                    INSERT INTO source_document (id, tenant_id, filer_entity_id, member_entity_id, source_system, direction, doc_type,
+                        doc_number, doc_date, natural_key, counterparty_trn, counterparty_name, counterparty_country, customer_type,
+                        original_doc_number, einvoice_uuid, posting_date, has_tax_invoice, agreed_payment_date, paid_date,
+                        paid_amount_aed, first_batch_id, last_batch_id)
+                    VALUES (:id, :tenant, :filer, :member, 'ERP', :direction, :docType, :number, :date, :key, :trn, :name, :country,
+                        :customerType, :original, :uuid, :posting, :hasInvoice, :agreed, :paidDate, :paidAmount, :batch, :batch)
+                    ON CONFLICT (tenant_id, filer_entity_id, source_system, direction, natural_key) DO UPDATE SET
+                        posting_date = EXCLUDED.posting_date, has_tax_invoice = EXCLUDED.has_tax_invoice,
+                        agreed_payment_date = EXCLUDED.agreed_payment_date, paid_date = EXCLUDED.paid_date,
+                        paid_amount_aed = EXCLUDED.paid_amount_aed, einvoice_uuid = COALESCE(EXCLUDED.einvoice_uuid, source_document.einvoice_uuid),
+                        original_doc_number = EXCLUDED.original_doc_number, counterparty_name = EXCLUDED.counterparty_name,
+                        last_batch_id = EXCLUDED.last_batch_id, voided_at = NULL
+                    RETURNING id, (xmax = 0) AS inserted
+                    """)
+                    .param("id", UUID.randomUUID()).param("tenant", RequestContext.requireTenant()).param("filer", ctx.filer.id())
+                    .param("member", member).param("direction", direction).param("docType", docType).param("number", docNumber)
+                    .param("date", docDate).param("key", naturalKey).param("trn", trn).param("name", text(r.get("counterparty_name")))
+                    .param("country", country).param("customerType", resolvedCustomerType)
+                    .param("original", text(r.get("original_doc_number"))).param("uuid", uuid).param("posting", postingDate)
+                    .param("hasInvoice", flag(r.get("has_tax_invoice"))).param("agreed", agreedDate).param("paidDate", paidDate)
+                    .param("paidAmount", paidAed).param("batch", ctx.batchId)
+                    .query(UpsertedDoc.class).single();
+            documentId = doc.id();
+            if (doc.inserted()) {
+                ctx.cache.documentCreated(documentId);
+            }
+            ctx.chunkDocs.put(docKey, new ChunkDoc(documentId, header));
+        }
 
         LineInput line = new LineInput(documentId, ctx.currentRowId, ctx.filer.id(), member, est == null ? null : est.id(),
                 est == null ? null : est.emirate(), est != null && est.designatedZone(), "ERP", direction, docType, lineNo,
                 goods, text(r.get("gl_account")), text(r.get("tax_code")), text(r.get("description")), trn, country, taxPoint,
                 currency, rate.get(), signedNet, signedVat, netAed, vatAed, recovery,
                 "TOURIST_REFUND".equals(docType) ? "TOURIST_REFUND" : null);
-        Ledger.Written written = ledger.writeSourceLine(line);
+        Ledger.Written written = ledger.writeSourceLine(line, ctx.cache);
         resolveEarlierProblems(ctx, rowKey);
         return new Outcome(written.result() == Ledger.WriteResult.UNCHANGED ? "UNCHANGED" : "LOADED", List.of(), rowKey, written.periodId(), documentId);
     }
@@ -297,7 +334,7 @@ public class RowProcessor {
         if (flag(r.get("void"))) {
             return voidLine(ctx, "IN", "CUSTOMS", naturalKey, lineNo, rowKey);
         }
-        Optional<TaxPeriod> period = calendar.periodFor(ctx.filer.id(), date);
+        Optional<TaxPeriod> period = ledger.periodFor(ctx.filer.id(), date, ctx.cache);
         if (period.isEmpty()) {
             return new Outcome("REJECTED", List.of("BEFORE_FIRST_PERIOD"), rowKey, null, null);
         }
@@ -320,7 +357,7 @@ public class RowProcessor {
                 est == null ? null : est.emirate(), est != null && est.designatedZone(), "CUSTOMS", "IN", docType, lineNo,
                 "GOODS", null, null, text(r.get("description")), null, country, date, "AED", BigDecimal.ONE, value, vat,
                 value.setScale(2, RoundingMode.HALF_UP), vat.setScale(2, RoundingMode.HALF_UP), recovery, treatment);
-        Ledger.Written written = ledger.writeSourceLine(line);
+        Ledger.Written written = ledger.writeSourceLine(line, ctx.cache);
         // Set E for check R07: what the customs declarations say, kept apart from the ledger lines.
         jdbc.sql("""
                 UPDATE source_document SET declared_vat_aed = (
@@ -449,6 +486,9 @@ public class RowProcessor {
 
     /** Once a row loads cleanly, earlier rejections or holds of the same row are no longer open problems. */
     private void resolveEarlierProblems(FileContext ctx, String rowKey) {
+        if (!ctx.openProblems) {
+            return;
+        }
         jdbc.sql("""
                 UPDATE ingest_row SET resolved_at = now()
                 WHERE entity_id = ? AND row_key = ? AND status IN ('REJECTED', 'HELD') AND resolved_at IS NULL

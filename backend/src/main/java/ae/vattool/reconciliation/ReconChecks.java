@@ -71,6 +71,14 @@ class ReconChecks {
         return all;
     }
 
+    private static String rows(long n) {
+        return n + (n == 1 ? " row" : " rows");
+    }
+
+    private static String lines(long n) {
+        return n + (n == 1 ? " line" : " lines");
+    }
+
     private static Finding finding(String rule, String fingerprint, String message, BigDecimal amount, Object... detail) {
         Map<String, Object> details = new LinkedHashMap<>();
         for (int i = 0; i + 1 < detail.length; i += 2) {
@@ -372,7 +380,7 @@ class ReconChecks {
             return List.of();
         }
         return List.of(finding("R13", "EMIRATE_SPLIT", "Emirate boxes total " + emirateBoxes + " but standard-rated supplies total "
-                + total.net() + ". " + total.missing() + " lines have no emirate.", total.net().subtract(emirateBoxes),
+                + total.net() + ". " + lines(total.missing()) + " with no emirate.", total.net().subtract(emirateBoxes),
                 "emirateBoxes", emirateBoxes.toPlainString(), "standardRatedTotal", total.net().toPlainString(), "linesWithoutEmirate", total.missing()));
     }
 
@@ -426,7 +434,7 @@ class ReconChecks {
                 WHERE status = 'HELD' AND resolved_at IS NULL AND period_id = ?
                 GROUP BY errors[1]
                 """).param(c.period().id()).query(Row.class).list().stream()
-                .map(r -> finding("D01", r.reason(), r.rows() + " rows are held: " + r.reason().replace("FX_RATE_MISSING:", "no FX rate for "), null,
+                .map(r -> finding("D01", r.reason(), rows(r.rows()) + " held: " + r.reason().replace("FX_RATE_MISSING:", "no FX rate for "), null,
                         "reason", r.reason(), "rows", r.rows()))
                 .toList();
     }
@@ -441,7 +449,7 @@ class ReconChecks {
                 GROUP BY r.batch_id, b.file_name
                 """).param("entity", c.entity().id()).param("period", c.period().id()).param("earliest", c.earliestOpen())
                 .query(Row.class).list().stream()
-                .map(r -> finding("D02", r.batchId().toString(), r.rows() + " rows rejected in " + r.fileName() + ", for example " + r.errors(), null,
+                .map(r -> finding("D02", r.batchId().toString(), rows(r.rows()) + " rejected in " + r.fileName() + ", for example " + r.errors(), null,
                         "file", r.fileName(), "rows", r.rows(), "example", r.errors(), "batchId", r.batchId().toString()))
                 .toList();
     }
@@ -453,8 +461,8 @@ class ReconChecks {
                 WHERE period_id = ? AND superseded_at IS NULL AND treatment = 'UNCLASSIFIED'
                 GROUP BY direction, tax_code, gl_account
                 """).param(c.period().id()).query(Row.class).list().stream()
-                .map(r -> finding("D03", r.direction() + ":" + r.taxCode() + ":" + r.glAccount(), r.lines() + " " + r.direction()
-                        + " lines with tax code " + r.taxCode() + " and GL " + r.glAccount() + " have no VAT treatment, so they are in no box",
+                .map(r -> finding("D03", r.direction() + ":" + r.taxCode() + ":" + r.glAccount(), lines(r.lines()) + " " + r.direction()
+                        + " with tax code " + r.taxCode() + " and GL " + r.glAccount() + " have no VAT treatment, so they are in no box",
                         r.vat(), "taxCode", r.taxCode(), "glAccount", r.glAccount(), "lines", r.lines(), "net", r.net().toPlainString(), "vat", r.vat().toPlainString()))
                 .toList();
     }
@@ -504,7 +512,7 @@ class ReconChecks {
                 .list().stream()
                 .filter(r -> FLAG_RULES.containsKey(r.flag()))
                 .map(r -> finding(FLAG_RULES.get(r.flag()), r.flag() + ":" + r.direction() + ":" + r.taxCode() + ":" + r.glAccount(),
-                        r.lines() + " " + r.direction() + " lines (tax code " + r.taxCode() + ", GL " + r.glAccount() + "): " + r.flag(), r.vat(),
+                        lines(r.lines()) + " " + r.direction() + " (tax code " + r.taxCode() + ", GL " + r.glAccount() + "): " + r.flag(), r.vat(),
                         "flag", r.flag(), "taxCode", r.taxCode(), "glAccount", r.glAccount(), "lines", r.lines(),
                         "net", r.net().toPlainString(), "vat", r.vat().toPlainString(), "sampleLineIds", List.of(r.sample())))
                 .toList();

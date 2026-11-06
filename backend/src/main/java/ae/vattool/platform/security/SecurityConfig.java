@@ -1,5 +1,6 @@
 package ae.vattool.platform.security;
 
+import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -8,6 +9,8 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -32,9 +35,14 @@ public class SecurityConfig {
     @Bean
     @ConditionalOnProperty(name = "app.security.test-keys", havingValue = "false", matchIfMissing = true)
     JwtDecoder jwtDecoder(@Value("${app.security.issuer}") String issuer,
-                          @Value("${app.security.jwk-set-uri}") String jwkSetUri) {
+                          @Value("${app.security.jwk-set-uri}") String jwkSetUri,
+                          @Value("${app.security.allowed-clients}") List<String> allowedClients) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
-        decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(issuer));
+        // A token must come from our identity provider and have been issued to one of our clients,
+        // not to some other application in the same realm.
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(issuer),
+                new JwtClaimValidator<String>("azp", allowedClients::contains)));
         return decoder;
     }
 }

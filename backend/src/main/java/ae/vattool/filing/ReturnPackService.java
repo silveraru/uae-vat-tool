@@ -275,6 +275,11 @@ public class ReturnPackService {
         return HtmlUtils.htmlEscape(String.valueOf(o), StandardCharsets.UTF_8.name());
     }
 
+    /** The PDF's base font has no arrow glyphs, so the data sets are written out for it. */
+    private static String plainSets(String sets) {
+        return sets.replace("→", " to ").replace("↔", " and ");
+    }
+
     private static String aed(BigDecimal b) {
         return String.format("%,.2f", b);
     }
@@ -284,14 +289,14 @@ public class ReturnPackService {
         StringBuilder h = new StringBuilder();
         // A page margin box repeats on every page, which a fixed element does not reliably do.
         String topMargin = draft
-                ? "@top-center { content: \"" + WATERMARK + "\"; color: #b00000; font-weight: bold; font-size: 11pt; }"
+                ? "@top-center { content: \"" + WATERMARK + "\"; font-family: Helvetica, Arial, sans-serif; color: #b00000; font-weight: bold; font-size: 11pt; }"
                 : "";
         h.append("""
                 <!DOCTYPE html><html><head><meta charset="UTF-8"/><title>VAT201 return pack</title><style>
-                @page { size: A4; margin: 18mm 14mm; TOP_MARGIN @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #555; } }
+                @page { size: A4; margin: 18mm 14mm; TOP_MARGIN @bottom-center { content: "Page " counter(page) " of " counter(pages); font-family: Helvetica, Arial, sans-serif; font-size: 8pt; color: #555; } }
                 body { font-family: Helvetica, Arial, sans-serif; font-size: 9pt; color: #1a2030; }
                 h1 { font-size: 16pt; margin: 0 0 4px 0; } h2 { font-size: 11pt; margin: 16px 0 6px 0; border-bottom: 1px solid #999; padding-bottom: 2px; }
-                table { width: 100%; border-collapse: collapse; } th, td { border-bottom: 1px solid #ccc; padding: 3px 5px; text-align: left; vertical-align: top; }
+                table { width: 100%; border-collapse: collapse; } tr { page-break-inside: avoid; } th, td { border-bottom: 1px solid #ccc; padding: 3px 5px; text-align: left; vertical-align: top; }
                 th { background: #eee; font-size: 8pt; } td.n, th.n { text-align: right; white-space: nowrap; } tr.total td { font-weight: bold; background: #f4f4f4; }
                 .meta { color: #444; } .hash { font-family: monospace; font-size: 7pt; word-break: break-all; }
                 .banner { border: 2px solid #b00; color: #b00; font-weight: bold; padding: 6px; margin-bottom: 8px; text-align: center; }
@@ -329,7 +334,7 @@ public class ReturnPackService {
                 .append("; variance: AED ").append(aed(c5.vatVariance())).append(".</p>");
         h.append("<table><tr><th>Check</th><th>What it proves</th><th>Sets</th><th>Severity</th><th class=\"n\">Open</th><th class=\"n\">Resolved</th><th class=\"n\">Waived</th></tr>");
         for (CertificateService.RuleResult r : cert.rules()) {
-            h.append("<tr><td>").append(esc(r.ruleId())).append("</td><td>").append(esc(r.name())).append("</td><td>").append(esc(r.sets()))
+            h.append("<tr><td>").append(esc(r.ruleId())).append("</td><td>").append(esc(r.name())).append("</td><td>").append(esc(plainSets(r.sets())))
                     .append("</td><td>").append(esc(r.severity())).append("</td><td class=\"n\">").append(r.open()).append("</td><td class=\"n\">")
                     .append(r.resolved()).append("</td><td class=\"n\">").append(r.waived()).append("</td></tr>");
         }

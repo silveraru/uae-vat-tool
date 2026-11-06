@@ -9,9 +9,38 @@ function keys(obj: object, prefix = ""): string[] {
   );
 }
 
+const sources = import.meta.glob("../**/*.tsx", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+
+/** i18next plural keys are stored with a suffix, so strip it when comparing with the code. */
+function withoutPlural(key: string) {
+  return key.replace(/_(one|other)$/, "");
+}
+
 describe("localisation", () => {
   it("has an Arabic translation for every English key, and no extras", () => {
-    expect(keys(ar).sort()).toEqual(keys(en).sort());
+    const pluralInsensitive = (o: object) => [...new Set(keys(o).map(withoutPlural))].sort();
+    expect(pluralInsensitive(ar)).toEqual(pluralInsensitive(en));
+  });
+
+  it("has no empty translations", () => {
+    for (const dict of [en, ar]) {
+      const flat = keys(dict);
+      for (const k of flat) {
+        const value = k.split(".").reduce((o: any, p) => o[p], dict as any);
+        expect(String(value).trim().length, k).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("defines every key the code asks for, in both languages", () => {
+    const known = new Set(keys(en).map(withoutPlural));
+    const missing: string[] = [];
+    for (const [file, text] of Object.entries(sources)) {
+      for (const m of text.matchAll(/\bt\("([a-zA-Z0-9_.-]+)"/g)) {
+        if (!known.has(m[1])) missing.push(`${file}: ${m[1]}`);
+      }
+    }
+    expect(missing).toEqual([]);
   });
 
   it("switches the document to right-to-left for Arabic and back", async () => {

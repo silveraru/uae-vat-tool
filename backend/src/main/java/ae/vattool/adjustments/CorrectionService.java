@@ -26,6 +26,8 @@ import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Errors found after filing (COR-01, spec journey 3). Works out the tax difference against the
@@ -53,6 +55,7 @@ public class CorrectionService {
     }
 
     private static final Set<String> FILED_STATES = Set.of("FILED", "PAID", "AMENDED");
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
 
     private final JdbcClient jdbc;
     private final ReturnService returns;
@@ -73,15 +76,19 @@ public class CorrectionService {
         this.audit = audit;
     }
 
-    private record Worked(TaxPeriod period, ReturnVersionView original, RulePackStore.ActivePack pack, Map<String, BoxValue> corrected,
-                          Map<UUID, Map<String, BoxValue>> perMember, BigDecimal difference, BigDecimal threshold, String route,
-                          List<Map<String, String>> changes) {}
+    /**
+     * baseline is what the tax position stands at today: the filed return, or the last correction of
+     * it. Measuring against the filed return every time would post earlier corrections again.
+     */
+    private record Worked(TaxPeriod period, ReturnVersionView original, ReturnVersionView baseline, RulePackStore.ActivePack pack,
+                          Map<String, BoxValue> corrected, Map<UUID, Map<String, BoxValue>> perMember, BigDecimal difference,
+                          BigDecimal threshold, String route, List<Map<String, String>> changes) {}
 
     /** Shows the outcome before anything is saved, so a reviewer can see the route first. */
     @Transactional(readOnly = true)
     public Preview preview(UUID periodId, List<BoxChange> manual) {
         Worked w = work(periodId, manual);
-        return new Preview(w.difference(), w.threshold(), w.route(), payable(ReturnService.parseValues(w.original().boxValues())),
+        return new Preview(w.difference(), w.threshold(), w.route(), payable(ReturnService.parseValues(w.baseline().boxValues())),
                 payable(w.corrected()), w.changes());
     }
 
@@ -100,7 +107,7 @@ public class CorrectionService {
         if (w.changes().isEmpty()) {
             throw DomainException.conflict("NO_DIFFERENCE", "The ledger matches the filed return, so there is nothing to correct");
         }
-        ReturnVersionView corrected = returns.saveCorrected(w.period(), w.pack(), w.corrected(), w.original(), w.perMember());
+        ReturnVersionView corrected = returns.saveCorrected(w.period(), w.pack(), w.corrected(), w.baseline(), w.perMember());
         UUID target = null;
         if ("NEXT_RETURN".equals(w.route())) {
             target = postToNextReturn(w);
@@ -110,13 +117,15 @@ public class CorrectionService {
         UUID id = UUID.randomUUID();
         jdbc.sql("""
                 INSERT INTO correction_case (id, tenant_id, entity_id, period_id, original_version_id, corrected_version_id, tax_difference_aed,
-                    threshold_aed, route, target_period_id, reason, evidence_id, handled_through, created_by)
-                VALUES (:id, :tenant, :entity, :period, :original, :corrected, :difference, :threshold, :route, :target, :reason, :evidence, now(), :by)
+                    threshold_aed, route, target_period_id, reason, evidence_id, handled_through, created_by, manual_changes)
+                VALUES (:id, :tenant, :entity, :period, :original, :corrected, :difference, :threshold, :route, :target, :reason, :evidence, now(), :by,
+                    CAST(:manual AS jsonb))
                 """)
                 .param("id", id).param("tenant", RequestContext.requireTenant()).param("entity", w.period().entityId()).param("period", periodId)
                 .param("original", w.original().id()).param("corrected", corrected.id()).param("difference", w.difference())
                 .param("threshold", w.threshold()).param("route", w.route()).param("target", target).param("reason", in.reason())
                 .param("evidence", in.evidenceId()).param("by", RequestContext.requireActor().actorId())
+                .param("manual", JSON.writeValueAsString(in.manualChanges() == null ? List.of() : in.manualChanges()))
                 .update();
         if (target != null) {
             ledger.requestRecompute(target);
@@ -135,10 +144,15 @@ public class CorrectionService {
             throw DomainException.conflict("PERIOD_NOT_FILED", "Corrections apply to filed returns. Withdraw the approval or edit the open return instead.");
         }
         ReturnVersionView original = returns.find(period.lockedVersionId()).orElseThrow();
+        ReturnVersionView baseline = returns.latest(periodId).orElseThrow();
         RulePackStore.ActivePack pack = packs.forDate(period.periodEnd());
         RulePackDefinition.Form form = pack.definition().form();
         ReturnService.Computed now = returns.computeNow(period, form);
         Map<String, BigDecimal> vatChanges = new HashMap<>();
+        // Figures entered by hand in earlier corrections are not in the ledger, so they carry forward.
+        for (BoxChange earlier : earlierManualChanges(periodId)) {
+            vatChanges.merge(earlier.box(), earlier.vatChange(), BigDecimal::add);
+        }
         if (manual != null) {
             for (BoxChange c : manual) {
                 RulePackDefinition.Box box = form.boxes().stream().filter(b -> b.code().equals(c.box())).findFirst()
@@ -150,7 +164,7 @@ public class CorrectionService {
             }
         }
         Map<String, BoxValue> corrected = BoxCalculator.withVatChanges(form, now.boxes(), vatChanges);
-        Map<String, BoxValue> filed = ReturnService.parseValues(original.boxValues());
+        Map<String, BoxValue> filed = ReturnService.parseValues(baseline.boxValues());
         BigDecimal difference = payable(corrected).subtract(payable(filed));
         // The threshold in force today applies, since the correction is being made today.
         BigDecimal threshold = packs.forDate(LocalDate.now()).definition().filing().correctionThresholdAed();
@@ -170,7 +184,18 @@ public class CorrectionService {
                 changes.add(change);
             }
         }
-        return new Worked(period, original, pack, corrected, now.perMember(), difference, threshold, route, changes);
+        return new Worked(period, original, baseline, pack, corrected, now.perMember(), difference, threshold, route, changes);
+    }
+
+    private List<BoxChange> earlierManualChanges(UUID periodId) {
+        List<BoxChange> out = new ArrayList<>();
+        for (String json : jdbc.sql("SELECT manual_changes::text FROM correction_case WHERE period_id = ?").param(periodId).query(String.class).list()) {
+            List<Map<String, Object>> rows = JSON.readValue(json, List.class);
+            for (Map<String, Object> r : rows) {
+                out.add(new BoxChange(String.valueOf(r.get("box")), new BigDecimal(String.valueOf(r.get("vatChange")))));
+            }
+        }
+        return out;
     }
 
     /**
@@ -187,7 +212,7 @@ public class CorrectionService {
             throw DomainException.conflict("NO_OPEN_PERIOD", "There is no open return to take this correction");
         }
         RulePackDefinition.Form form = w.pack().definition().form();
-        Map<String, BoxValue> filed = ReturnService.parseValues(w.original().boxValues());
+        Map<String, BoxValue> filed = ReturnService.parseValues(w.baseline().boxValues());
         String firstOutput = firstAdjustable(form, "OUTPUT");
         String firstInput = firstAdjustable(form, "INPUT");
         for (RulePackDefinition.Box box : form.boxes()) {

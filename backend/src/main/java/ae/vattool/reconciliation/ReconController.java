@@ -125,7 +125,7 @@ public class ReconController {
         TaxPeriod p = load(id);
         access.require(p.entityId(), Permission.EDIT_DATA);
         requireOpen(p);
-        matcher.decide(matchId, in.accept());
+        matcher.decide(matchId, p.entityId(), in.accept());
         return recon.run(id, "MATCH_DECISION");
     }
 

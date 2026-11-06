@@ -373,7 +373,7 @@ class ReconciliationTest extends IntegrationTest {
 
         run();
 
-        assertThat(open("R13").getFirst().get("message").asString()).contains("1 lines have no emirate");
+        assertThat(open("R13").getFirst().get("message").asString()).contains("1 line with no emirate");
     }
 
     @Test
@@ -412,7 +412,7 @@ class ReconciliationTest extends IntegrationTest {
     void d02BlocksOnRejectedRowsAndClearsWhenTheRowLoads() throws Exception {
         client.uploadCsv(entity, "AR", AR_HEAD + "TAX_INVOICE,R1,2027-01-05,100.00,5.00,S5,NOPE," + CUSTOMER + ",B2B,,,\n");
         run();
-        assertThat(open("D02").getFirst().get("message").asString()).contains("1 rows rejected", "ESTABLISHMENT_UNKNOWN");
+        assertThat(open("D02").getFirst().get("message").asString()).contains("1 row rejected", "ESTABLISHMENT_UNKNOWN");
 
         sale("R1", "2027-01-05", "100.00", "5.00");
         run();

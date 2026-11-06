@@ -6,6 +6,7 @@ import ae.vattool.platform.audit.AuditLog;
 import ae.vattool.platform.storage.VaultStorage;
 import ae.vattool.platform.tenancy.RequestContext;
 import ae.vattool.platform.web.DomainException;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -52,13 +53,15 @@ public class IngestionService {
     private final AuditLog audit;
     private final VaultStorage storage;
     private final RowProcessor rows;
+    private final MeterRegistry metrics;
 
-    public IngestionService(JdbcClient jdbc, TransactionTemplate tx, AuditLog audit, VaultStorage storage, RowProcessor rows) {
+    public IngestionService(JdbcClient jdbc, TransactionTemplate tx, AuditLog audit, VaultStorage storage, RowProcessor rows, MeterRegistry metrics) {
         this.jdbc = jdbc;
         this.tx = tx;
         this.audit = audit;
         this.storage = storage;
         this.rows = rows;
+        this.metrics = metrics;
     }
 
     public LoadResult loadFile(UUID filerId, Kind kind, String templateVersion, String channel, String fileName, byte[] content) {
@@ -103,6 +106,11 @@ public class IngestionService {
             tx.executeWithoutResult(s -> rows.processChunk(context, parsedRows.subList(from, to), from + 1, counts));
         }
         Batch done = tx.execute(s -> finish(batchId, filerId, kind, fileName, hash, parsedRows.size(), counts));
+        String tenant = RequestContext.requireTenant().toString();
+        metrics.counter("vat.ingest.rows", "tenant", tenant, "result", "loaded").increment(counts.loaded);
+        metrics.counter("vat.ingest.rows", "tenant", tenant, "result", "unchanged").increment(counts.unchanged);
+        metrics.counter("vat.ingest.rows", "tenant", tenant, "result", "rejected").increment(counts.rejected);
+        metrics.counter("vat.ingest.rows", "tenant", tenant, "result", "held").increment(counts.held);
         if (kind == Kind.FX) {
             rows.reprocessHeld(filer);
         }

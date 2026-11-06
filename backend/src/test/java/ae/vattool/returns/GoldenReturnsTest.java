@@ -69,6 +69,8 @@ class GoldenReturnsTest extends IntegrationTest {
 
         JsonNode view = computeReturn(g);
 
+        UUID period = client.periodId(g.entityId(), g.expected().get("period").asString());
+        assertThat(client.get(preparer, "/api/periods/" + period + "/group-members")).hasSize(3);
         JsonNode members = TestClient.JSON.readTree(view.get("version").get("memberValues").asString());
         for (var want : g.expected().get("members").properties()) {
             UUID id = g.memberIds().get(want.getKey());

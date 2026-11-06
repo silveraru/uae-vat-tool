@@ -255,6 +255,28 @@ class IngestionTest extends IntegrationTest {
     }
 
     @Test
+    void aPurchaseFollowsItsInvoiceDateBecauseInputTaxNeedsTheInvoiceHeld() throws Exception {
+        client.uploadCsv(entity, "AP", "doc_type,doc_number,doc_date,net_amount,vat_amount,tax_code,establishment_code,counterparty_trn,supply_date\n"
+                + "TAX_INVOICE,B1,2027-02-10,100.00,5.00,S5,DXB-1,100000000000801,2027-01-20\n");
+
+        UUID february = client.periodId(entity, "2027-02-01");
+        long inFebruary = world.queryInTenant(tenant, () -> jdbc.sql("SELECT COUNT(*) FROM tax_line WHERE period_id = ?").param(february).query(Long.class).single());
+
+        assertThat(inFebruary).isEqualTo(1);
+    }
+
+    @Test
+    void anExplicitTaxPointOverridesTheDefaultForAPurchase() throws Exception {
+        client.uploadCsv(entity, "AP", "doc_type,doc_number,doc_date,net_amount,vat_amount,tax_code,establishment_code,counterparty_trn,tax_point_date\n"
+                + "TAX_INVOICE,B1,2027-02-10,100.00,5.00,S5,DXB-1,100000000000801,2027-01-20\n");
+
+        UUID january = client.periodId(entity, "2027-01-01");
+        long inJanuary = world.queryInTenant(tenant, () -> jdbc.sql("SELECT COUNT(*) FROM tax_line WHERE period_id = ?").param(january).query(Long.class).single());
+
+        assertThat(inJanuary).isEqualTo(1);
+    }
+
+    @Test
     void anXlsxUploadWorksIncludingRealDateCells() throws Exception {
         byte[] xlsx;
         try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {

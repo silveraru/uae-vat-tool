@@ -33,11 +33,23 @@ management:
     web:
       exposure:
         include: health,info,metrics,prometheus
+  tracing:
+    sampling:
+      probability: 0.1
+    export:
+      # Point this at an OTLP collector to turn tracing on (NFR-14).
+      enabled: false
+  metrics:
+    distribution:
+      percentiles-histogram:
+        vat.einvoice.lag: true
 
 app:
   security:
     issuer: http://localhost:18180/realms/uaevat
     jwk-set-uri: http://localhost:18180/realms/uaevat/protocol/openid-connect/certs
+    # Applications whose tokens are accepted. Add a client here for ERP integrations using the REST API.
+    allowed-clients: vat-web
   seed:
     enabled: false
   worker:

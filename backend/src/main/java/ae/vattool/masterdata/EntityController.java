@@ -112,6 +112,10 @@ public class EntityController {
     @GetMapping("/entities/{id}/mappings/{versionId}")
     public MappingService.VersionWithEntries mapping(@PathVariable UUID id, @PathVariable UUID versionId) {
         requireVisible(id);
+        // Row-level security only separates tenants, so the link to this entity is checked here.
+        if (!mappings.belongsTo(versionId, id)) {
+            throw ae.vattool.platform.web.DomainException.notFound("Mapping version");
+        }
         return mappings.load(versionId);
     }
 
