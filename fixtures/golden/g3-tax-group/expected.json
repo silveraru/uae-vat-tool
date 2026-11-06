@@ -1,0 +1,83 @@
+{
+  "period": "2027-01-01",
+  "boxes": {
+    "1a": {
+      "amount": "30000.00",
+      "vat": "1500.00",
+      "adjustment": "0.00"
+    },
+    "1b": {
+      "amount": "50000.00",
+      "vat": "2500.00",
+      "adjustment": "0.00"
+    },
+    "1c": {
+      "amount": "20000.00",
+      "vat": "1000.00",
+      "adjustment": "0.00"
+    },
+    "8": {
+      "amount": "100000.00",
+      "vat": "5000.00",
+      "adjustment": "0.00"
+    },
+    "9": {
+      "amount": "16000.00",
+      "vat": "800.00",
+      "adjustment": "0.00"
+    },
+    "11": {
+      "amount": "16000.00",
+      "vat": "800.00",
+      "adjustment": "0.00"
+    },
+    "12": {
+      "amount": "0.00",
+      "vat": "5000.00",
+      "adjustment": "0.00"
+    },
+    "13": {
+      "amount": "0.00",
+      "vat": "800.00",
+      "adjustment": "0.00"
+    },
+    "14": {
+      "amount": "0.00",
+      "vat": "4200.00",
+      "adjustment": "0.00"
+    }
+  },
+  "members": {
+    "Golden Three Holding (Representative)": {
+      "1b": {
+        "amount": "50000.00",
+        "vat": "2500.00",
+        "adjustment": "0.00"
+      },
+      "9": {
+        "amount": "10000.00",
+        "vat": "500.00",
+        "adjustment": "0.00"
+      }
+    },
+    "Golden Three Member A": {
+      "1a": {
+        "amount": "30000.00",
+        "vat": "1500.00",
+        "adjustment": "0.00"
+      },
+      "9": {
+        "amount": "6000.00",
+        "vat": "300.00",
+        "adjustment": "0.00"
+      }
+    },
+    "Golden Three Member B": {
+      "1c": {
+        "amount": "20000.00",
+        "vat": "1000.00",
+        "adjustment": "0.00"
+      }
+    }
+  }
+}

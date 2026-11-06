@@ -18,7 +18,16 @@ public record RulePackDefinition(
         Filing filing,
         Rates rates,
         Classification classification,
+        Reconciliation reconciliation,
         Form form) {
+
+    /** Tolerances, and which boxes each GL control account type is compared with (check R06). */
+    public record Reconciliation(
+            BigDecimal perInvoiceToleranceAed,
+            BigDecimal glToleranceAed,
+            BigDecimal boxSwingPct,
+            int fuzzyDateWindowDays,
+            Map<String, List<String>> glAccountBoxes) {}
 
     public record Filing(
             int dueDaysAfterPeriodEnd,

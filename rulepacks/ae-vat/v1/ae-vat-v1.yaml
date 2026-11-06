@@ -16,6 +16,19 @@ filing:
 rates:
   standardPct: 5
 
+reconciliation:
+  perInvoiceToleranceAed: 1
+  glToleranceAed: 100
+  boxSwingPct: 25
+  fuzzyDateWindowDays: 3
+  # The VAT in these boxes, adjustments included, is compared with each GL control account type.
+  glAccountBoxes:
+    OUTPUT: ["1a.vat", "1b.vat", "1c.vat", "1d.vat", "1e.vat", "1f.vat", "1g.vat", "2.vat",
+             "1a.adjustment", "1b.adjustment", "1c.adjustment", "1d.adjustment", "1e.adjustment", "1f.adjustment", "1g.adjustment"]
+    INPUT: ["9.vat", "9.adjustment"]
+    REVERSE_CHARGE: ["3.vat"]
+    IMPORT: ["6.vat", "7.vat"]
+
 classification:
   # Decision table for place of supply. A rule's treatment is used when the tax code has no
   # mapping. When a mapping exists and disagrees, the mapping stands and the line is flagged for a

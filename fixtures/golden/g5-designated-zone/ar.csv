@@ -1,0 +1,6 @@
+doc_type,doc_number,doc_date,net_amount,vat_amount,line_no,currency,counterparty_name,counterparty_trn,counterparty_country,customer_type,establishment_code,gl_account,tax_code,description,goods_or_services,original_doc_number,agreed_payment_date,has_tax_invoice,recovery_pct
+TAX_INVOICE,DZ-1,2027-01-05,70000.00,0.00,1,,Zone Customer,100000000000940,,B2B,JAFZA,,OOS,,GOODS,,,,
+TAX_INVOICE,DZ-2,2027-01-06,25000.00,0.00,1,,Zone Customer,100000000000940,,B2B,JAFZA,,,,GOODS,,,,
+TAX_INVOICE,X-1,2027-01-07,120000.00,0.00,1,,Saudi Buyer,,SA,B2B,JAFZA,,Z0,,GOODS,,,,
+TAX_INVOICE,M-1,2027-01-08,40000.00,2000.00,1,,Mainland Customer,100000000000941,AE,B2B,JAFZA,,S5,,SERVICES,,,,
+TAX_INVOICE,E-1,2027-01-09,15000.00,0.00,1,,Bank,100000000000942,AE,B2B,JAFZA,,EX,,SERVICES,,,,

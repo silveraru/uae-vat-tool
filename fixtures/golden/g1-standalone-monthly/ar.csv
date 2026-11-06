@@ -1,0 +1,6 @@
+doc_type,doc_number,doc_date,net_amount,vat_amount,line_no,currency,counterparty_name,counterparty_trn,counterparty_country,customer_type,establishment_code,gl_account,tax_code,description,goods_or_services,original_doc_number,agreed_payment_date,has_tax_invoice,recovery_pct
+TAX_INVOICE,INV-1001,2027-01-05,10000.00,500.00,1,,Customer A,100000000000901,,B2B,DXB-1,,S5,,GOODS,,,,
+TAX_INVOICE,INV-1002,2027-01-12,20000.00,1000.00,1,,Customer B,100000000000902,,B2B,DXB-1,,S5,,SERVICES,,,,
+B2C_SALE,R-1,2027-01-20,1000.00,50.00,1,,,,,B2C,DXB-1,,S5,,GOODS,,,,
+CREDIT_NOTE,CN-1,2027-01-25,2000.00,100.00,1,,Customer A,100000000000901,,B2B,DXB-1,,S5,,GOODS,INV-1001,,,
+TAX_INVOICE,EXP-1,2027-01-26,5000.00,0.00,1,,US Buyer,,US,B2B,DXB-1,,Z0,,GOODS,,,,

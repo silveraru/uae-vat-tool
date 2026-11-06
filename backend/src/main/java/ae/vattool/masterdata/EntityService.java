@@ -21,7 +21,7 @@ public class EntityService {
                               LocalDate einvoiceGoLive, BigDecimal defaultRecoveryPct,
                               BigDecimal partnerThresholdAed, Boolean requireReviewer) {}
 
-    public record EstablishmentInput(String code, String name, String emirate, boolean designatedZone, String zoneName) {}
+    public record EstablishmentInput(String code, String name, String emirate, Boolean designatedZone, String zoneName) {}
 
     public record Establishment(UUID id, UUID entityId, String code, String name, String emirate,
                                 boolean designatedZone, String zoneName) {}
@@ -175,13 +175,13 @@ public class EntityService {
                     """)
                     .param("id", id).param("tenant", RequestContext.requireTenant()).param("entity", entityId)
                     .param("code", in.code()).param("name", in.name()).param("emirate", in.emirate())
-                    .param("dz", in.designatedZone()).param("zone", in.zoneName())
+                    .param("dz", Boolean.TRUE.equals(in.designatedZone())).param("zone", in.zoneName())
                     .update();
         } catch (DuplicateKeyException e) {
             throw DomainException.conflict("ESTABLISHMENT_EXISTS", "Establishment code " + in.code() + " already exists");
         }
         audit.record("ESTABLISHMENT_ADDED", "ESTABLISHMENT", id, entityId, null, in, null);
-        return new Establishment(id, entityId, in.code(), in.name(), in.emirate(), in.designatedZone(), in.zoneName());
+        return new Establishment(id, entityId, in.code(), in.name(), in.emirate(), Boolean.TRUE.equals(in.designatedZone()), in.zoneName());
     }
 
     @Transactional(readOnly = true)

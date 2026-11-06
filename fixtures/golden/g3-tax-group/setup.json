@@ -1,0 +1,93 @@
+{
+  "entity": {
+    "legalName": "Golden Three Holding (Representative)",
+    "trn": "100000000000103",
+    "entityKind": "GROUP_REPRESENTATIVE",
+    "filingFrequency": "MONTHLY",
+    "firstPeriodStart": "2027-01-01",
+    "einvoiceGoLive": "2027-01-01"
+  },
+  "establishments": [
+    {
+      "code": "DXB-R",
+      "name": "Rep Dubai",
+      "emirate": "DXB",
+      "designatedZone": false
+    }
+  ],
+  "members": [
+    {
+      "legalName": "Golden Three Member A",
+      "establishments": [
+        {
+          "code": "AUH-A",
+          "name": "A Abu Dhabi",
+          "emirate": "AUH",
+          "designatedZone": false
+        }
+      ]
+    },
+    {
+      "legalName": "Golden Three Member B",
+      "establishments": [
+        {
+          "code": "SHJ-B",
+          "name": "B Sharjah",
+          "emirate": "SHJ",
+          "designatedZone": false
+        }
+      ]
+    }
+  ],
+  "mappings": [
+    {
+      "matchType": "TAX_CODE",
+      "sourceCode": "S5",
+      "treatment": "STANDARD"
+    },
+    {
+      "matchType": "TAX_CODE",
+      "sourceCode": "Z0",
+      "treatment": "ZERO_RATED"
+    },
+    {
+      "matchType": "TAX_CODE",
+      "sourceCode": "EX",
+      "treatment": "EXEMPT"
+    },
+    {
+      "matchType": "TAX_CODE",
+      "sourceCode": "OOS",
+      "treatment": "OUT_OF_SCOPE"
+    },
+    {
+      "matchType": "TAX_CODE",
+      "sourceCode": "RC",
+      "treatment": "REVERSE_CHARGE"
+    },
+    {
+      "matchType": "TAX_CODE",
+      "sourceCode": "IM",
+      "treatment": "IMPORT"
+    },
+    {
+      "matchType": "TAX_CODE",
+      "sourceCode": "DRC-GOLD",
+      "treatment": "DRC",
+      "drcCategory": "GOLD"
+    },
+    {
+      "matchType": "TAX_CODE",
+      "sourceCode": "DRC-ELEC",
+      "treatment": "DRC",
+      "drcCategory": "ELECTRONIC_DEVICES"
+    },
+    {
+      "matchType": "GL_ACCOUNT",
+      "sourceCode": "6100",
+      "blockedCategory": "ENTERTAINMENT"
+    }
+  ],
+  "counterparties": [],
+  "period": "2027-01-15"
+}

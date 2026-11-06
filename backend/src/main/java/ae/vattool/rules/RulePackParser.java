@@ -46,6 +46,9 @@ public final class RulePackParser {
         if (pack.rates() == null || pack.rates().standardPct() == null) {
             problems.add("rates.standardPct is required");
         }
+        if (pack.reconciliation() == null) {
+            problems.add("reconciliation section is required");
+        }
         if (pack.form() == null || pack.form().boxes() == null || pack.form().boxes().isEmpty()) {
             problems.add("form with boxes is required");
             return problems;

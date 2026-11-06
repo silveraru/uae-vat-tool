@@ -1,0 +1,4 @@
+doc_type,doc_number,doc_date,net_amount,vat_amount,line_no,currency,counterparty_name,counterparty_trn,counterparty_country,customer_type,establishment_code,gl_account,tax_code,description,goods_or_services,original_doc_number,agreed_payment_date,has_tax_invoice,recovery_pct
+TAX_INVOICE,ZB-1,2027-01-10,30000.00,0.00,1,,Zone Supplier,100000000000840,,,JAFZA,,,,GOODS,,2027-02-10,true,
+TAX_INVOICE,SV-1,2027-01-11,8000.00,400.00,1,,Service Co,100000000000841,AE,,JAFZA,,S5,,SERVICES,,2027-02-11,true,50
+TAX_INVOICE,ST-1,2027-01-12,2000.00,100.00,1,,Gift Co,100000000000842,AE,,JAFZA,,S5,Staff gifts for year end,GOODS,,2027-02-12,true,

@@ -20,7 +20,7 @@ public class PartyService {
 
     public record Signatory(UUID id, String name, String email, String position, LocalDate validFrom, LocalDate validTo) {}
 
-    public record CounterpartyInput(String trn, String name, String country, boolean designatedZone, String trnStatus,
+    public record CounterpartyInput(String trn, String name, String country, Boolean designatedZone, String trnStatus,
                                     LocalDate activeFrom, LocalDate activeTo, LocalDate checkedOn) {}
 
     public record Counterparty(UUID id, String trn, String name, String country, boolean designatedZone, String trnStatus,
@@ -135,7 +135,7 @@ public class PartyService {
                 """)
                 .param("id", UUID.randomUUID()).param("tenant", RequestContext.requireTenant())
                 .param("trn", in.trn()).param("name", in.name())
-                .param("country", in.country() == null ? "AE" : in.country()).param("dz", in.designatedZone())
+                .param("country", in.country() == null ? "AE" : in.country()).param("dz", Boolean.TRUE.equals(in.designatedZone()))
                 .param("status", in.trnStatus() == null ? "UNKNOWN" : in.trnStatus())
                 .param("from", in.activeFrom()).param("to", in.activeTo()).param("checked", in.checkedOn())
                 .update();

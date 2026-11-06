@@ -25,8 +25,8 @@
     <json-schema-validator.version>1.5.9</json-schema-validator.version>
   </properties>
   <modules>
-    <module>backend</module>
     <module>asp-simulator</module>
+    <module>backend</module>
   </modules>
   <dependencyManagement>
     <dependencies>

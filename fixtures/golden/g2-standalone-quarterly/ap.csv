@@ -1,0 +1,3 @@
+doc_type,doc_number,doc_date,net_amount,vat_amount,line_no,currency,counterparty_name,counterparty_trn,counterparty_country,customer_type,establishment_code,gl_account,tax_code,description,goods_or_services,original_doc_number,agreed_payment_date,has_tax_invoice,recovery_pct
+TAX_INVOICE,B-1,2027-02-05,100000.00,5000.00,1,,Supplier,100000000000810,,,DXB,,S5,,SERVICES,,2027-03-05,true,
+TAX_INVOICE,SVC-1,2027-02-06,20000.00,0.00,1,,UK Consultant,,GB,,DXB,,RC,,SERVICES,,2027-03-06,,

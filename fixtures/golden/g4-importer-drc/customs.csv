@@ -1,0 +1,4 @@
+doc_type,declaration_number,declaration_date,customs_value_aed,vat_aed,establishment_code,supplier_name,supplier_country
+IMPORT_DECLARATION,DEC-1,2027-01-08,200000.00,10000.00,DXB-1,Overseas Maker,CN
+IMPORT_DECLARATION,DEC-2,2027-01-15,50000.00,2500.00,DXB-1,Overseas Maker,CN
+IMPORT_ADJUSTMENT,DEC-1-A,2027-01-22,10000.00,500.00,DXB-1,Overseas Maker,CN

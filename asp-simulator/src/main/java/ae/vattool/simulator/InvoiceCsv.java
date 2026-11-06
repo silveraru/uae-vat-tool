@@ -15,8 +15,7 @@ import java.util.UUID;
 
 /**
  * Reads the VAT tool's AR or AP template and produces one e-invoice per in-scope document, adding
- * up the lines. B2C sales and customer-less rows have no e-invoice, as in the real mandate. Simple
- * comma splitting is enough here because the fixtures this reads contain no quoted commas.
+ * up the lines. B2C sales have no e-invoice, as in the real mandate. Simple comma splitting is enough here because the fixtures this reads contain no quoted commas.
  */
 final class InvoiceCsv {
 
@@ -41,8 +40,7 @@ final class InvoiceCsv {
                 String docType = get(cols, parts, "doc_type");
                 String counterparty = get(cols, parts, "counterparty_trn");
                 String customerType = get(cols, parts, "customer_type");
-                if (!IN_SCOPE.contains(docType) || counterparty.isEmpty() || "B2C".equals(customerType)
-                        || !"".equals(get(cols, parts, "void"))) {
+                if (!IN_SCOPE.contains(docType) || "B2C".equals(customerType) || !"".equals(get(cols, parts, "void"))) {
                     continue;
                 }
                 String number = get(cols, parts, "doc_number");
@@ -62,8 +60,8 @@ final class InvoiceCsv {
                         : UUID.fromString(given);
                 byDoc.put(key, new EventFactory.InvoiceSpec(direction,
                         "TAX_INVOICE".equals(docType) ? "INVOICE" : docType, number, date,
-                        "ISSUED".equals(direction) ? entityTrn : counterparty,
-                        "ISSUED".equals(direction) ? counterparty : entityTrn,
+                        "ISSUED".equals(direction) ? entityTrn : emptyToNull(counterparty),
+                        "ISSUED".equals(direction) ? emptyToNull(counterparty) : entityTrn,
                         net, vat, emptyToNull(get(cols, parts, "original_doc_number")), uuid));
             }
             return new ArrayList<>(byDoc.values());

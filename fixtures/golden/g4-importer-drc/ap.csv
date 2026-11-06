@@ -1,0 +1,4 @@
+doc_type,doc_number,doc_date,net_amount,vat_amount,line_no,currency,counterparty_name,counterparty_trn,counterparty_country,customer_type,establishment_code,gl_account,tax_code,description,goods_or_services,original_doc_number,agreed_payment_date,has_tax_invoice,recovery_pct
+TAX_INVOICE,GOLD-1,2027-01-06,100000.00,0.00,1,,Bullion Dealer,100000000000830,,,DXB-1,,DRC-GOLD,Gold bars for resale,GOODS,,2027-02-06,true,
+TAX_INVOICE,ELEC-1,2027-01-07,40000.00,0.00,1,,Phone Distributor,100000000000831,,,DXB-1,,DRC-ELEC,Mobile phones for resale,GOODS,,2027-02-07,true,
+TAX_INVOICE,IMP-MEMO,2027-01-08,200000.00,10000.00,1,,Overseas Maker,,CN,,DXB-1,,IM,Import recorded in AP,GOODS,,,,

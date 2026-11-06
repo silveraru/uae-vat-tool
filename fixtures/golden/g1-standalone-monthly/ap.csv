@@ -1,0 +1,3 @@
+doc_type,doc_number,doc_date,net_amount,vat_amount,line_no,currency,counterparty_name,counterparty_trn,counterparty_country,customer_type,establishment_code,gl_account,tax_code,description,goods_or_services,original_doc_number,agreed_payment_date,has_tax_invoice,recovery_pct
+TAX_INVOICE,BILL-1,2027-01-08,4000.00,200.00,1,,Supplier A,100000000000801,,,DXB-1,5000,S5,,SERVICES,,2027-02-08,true,
+TAX_INVOICE,BILL-2,2027-01-09,1000.00,50.00,1,,Supplier B,100000000000802,,,DXB-1,6100,S5,Client event,SERVICES,,2027-02-09,true,

@@ -15,12 +15,12 @@
     "invoiceUuid": { "type": "string", "format": "uuid" },
     "invoice": {
       "type": "object",
-      "required": ["docType", "number", "issueDate", "supplierTrn", "currency", "netAed", "vatAed"],
+      "required": ["docType", "number", "issueDate", "currency", "netAed", "vatAed"],
       "properties": {
         "docType": { "enum": ["INVOICE", "CREDIT_NOTE", "DEBIT_NOTE"] },
         "number": { "type": "string", "minLength": 1 },
         "issueDate": { "type": "string", "format": "date" },
-        "supplierTrn": { "type": "string", "pattern": "^[0-9]{15}$" },
+        "supplierTrn": { "type": ["string", "null"], "pattern": "^[0-9]{15}$" },
         "buyerTrn": { "type": ["string", "null"], "pattern": "^[0-9]{15}$" },
         "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
         "netAed": { "type": "number", "description": "Negative for a credit note." },

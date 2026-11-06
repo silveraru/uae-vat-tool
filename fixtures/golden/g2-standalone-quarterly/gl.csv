@@ -1,0 +1,4 @@
+account_code,account_type,period_end,balance_aed
+2201,OUTPUT,2027-03-31,17586.25
+1201,INPUT,2027-03-31,5000.00
+2202,REVERSE_CHARGE,2027-03-31,1000.00

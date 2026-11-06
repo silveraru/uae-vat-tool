@@ -99,6 +99,13 @@ public class PeriodCalendar {
         return list(filerId);
     }
 
+    /** The one way controllers load a period, so the lookup always runs in a tenant transaction. */
+    @Transactional(readOnly = true)
+    public TaxPeriod get(UUID periodId) {
+        return jdbc.sql(TaxPeriod.SELECT + " WHERE id = ?").param(periodId).query(TaxPeriod.class).optional()
+                .orElseThrow(() -> DomainException.notFound("Tax period"));
+    }
+
     @Transactional(readOnly = true)
     public List<TaxPeriod> list(UUID filerId) {
         return jdbc.sql(TaxPeriod.SELECT + " WHERE entity_id = ? ORDER BY period_start").param(filerId)

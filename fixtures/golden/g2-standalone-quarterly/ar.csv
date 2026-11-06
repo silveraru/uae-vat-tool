@@ -1,0 +1,10 @@
+doc_type,doc_number,doc_date,net_amount,vat_amount,line_no,currency,counterparty_name,counterparty_trn,counterparty_country,customer_type,establishment_code,gl_account,tax_code,description,goods_or_services,original_doc_number,agreed_payment_date,has_tax_invoice,recovery_pct
+TAX_INVOICE,A-1,2027-02-10,100000.00,5000.00,1,,Customer,100000000000910,,B2B,AUH,,S5,,GOODS,,,,
+TAX_INVOICE,D-1,2027-02-10,80000.00,4000.00,1,,Customer,100000000000910,,B2B,DXB,,S5,,GOODS,,,,
+TAX_INVOICE,S-1,2027-02-10,40000.00,2000.00,1,,Customer,100000000000910,,B2B,SHJ,,S5,,GOODS,,,,
+TAX_INVOICE,J-1,2027-02-10,20000.00,1000.00,1,,Customer,100000000000910,,B2B,AJM,,S5,,GOODS,,,,
+TAX_INVOICE,Q-1,2027-02-10,5000.00,250.00,1,,Customer,100000000000910,,B2B,UAQ,,S5,,GOODS,,,,
+TAX_INVOICE,R-1,2027-02-10,60000.00,3000.00,1,,Customer,100000000000910,,B2B,RAK,,S5,,GOODS,,,,
+TAX_INVOICE,F-1,2027-02-10,10000.00,500.00,1,,Customer,100000000000910,,B2B,FUJ,,S5,,GOODS,,,,
+TAX_INVOICE,USD-1,2027-02-10,10000.00,500.00,1,USD,Customer,100000000000910,,B2B,DXB,,S5,,GOODS,,,,
+TAX_INVOICE,EX-1,2027-02-11,30000.00,0.00,1,,Resident,100000000000911,,B2B,DXB,,EX,Residential lease,,,,,
