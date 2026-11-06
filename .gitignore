@@ -1,0 +1,12 @@
+target/
+node_modules/
+dist/
+.DS_Store
+.idea/
+*.iml
+.vscode/
+.data/
+playwright-report/
+test-results/
+*.log
+.env

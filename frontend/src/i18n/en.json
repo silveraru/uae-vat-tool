@@ -1,0 +1,8 @@
+{
+  "app": { "title": "UAE VAT Tool", "skipToContent": "Skip to main content" },
+  "nav": { "portfolio": "Portfolio", "deadlines": "Deadlines", "entities": "Entities", "audit": "Audit log", "signOut": "Sign out", "language": "العربية" },
+  "common": { "loading": "Loading…", "error": "Something went wrong", "save": "Save", "cancel": "Cancel", "retry": "Try again", "none": "Nothing to show" },
+  "auth": { "signingIn": "Signing you in…", "noAccess": "Your account has no access to this system. Ask your firm administrator." },
+  "home": { "welcome": "Welcome, {{name}}", "firm": "Firm", "roles": "Your roles" },
+  "role": { "PREPARER": "Preparer", "APPROVER": "Approver", "TAX_REVIEWER": "Tax reviewer", "ENGAGEMENT_PARTNER": "Engagement partner", "FIRM_ADMIN": "Firm admin", "AUDITOR": "External auditor" }
+}

@@ -1,0 +1,5 @@
+app:
+  worker:
+    enabled: true
+server:
+  port: 18091

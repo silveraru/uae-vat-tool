@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vat-tool.example/contracts/einvoice-event-v1.schema.json",
+  "title": "E-invoice platform event, version 1",
+  "description": "Published by the ASP platform and consumed by the VAT tool. Proposed contract: to be reviewed by the ASP platform team.",
+  "type": "object",
+  "required": ["specVersion", "eventId", "eventType", "occurredAt", "tenantId", "entityTrn", "invoiceUuid"],
+  "properties": {
+    "specVersion": { "const": "1.0" },
+    "eventId": { "type": "string", "format": "uuid", "description": "Unique per event. Consumers use it to ignore redelivery." },
+    "eventType": { "enum": ["einvoice.issued", "einvoice.received", "einvoice.rejected", "einvoice.corner5_status"] },
+    "occurredAt": { "type": "string", "format": "date-time", "description": "When it happened at the platform. Consumers use it to order events that arrive out of order." },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "entityTrn": { "type": "string", "pattern": "^[0-9]{15}$", "description": "TRN of the entity whose data this is: the group TRN for a tax group." },
+    "invoiceUuid": { "type": "string", "format": "uuid" },
+    "invoice": {
+      "type": "object",
+      "required": ["docType", "number", "issueDate", "supplierTrn", "currency", "netAed", "vatAed"],
+      "properties": {
+        "docType": { "enum": ["INVOICE", "CREDIT_NOTE", "DEBIT_NOTE"] },
+        "number": { "type": "string", "minLength": 1 },
+        "issueDate": { "type": "string", "format": "date" },
+        "supplierTrn": { "type": "string", "pattern": "^[0-9]{15}$" },
+        "buyerTrn": { "type": ["string", "null"], "pattern": "^[0-9]{15}$" },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "netAed": { "type": "number", "description": "Negative for a credit note." },
+        "vatAed": { "type": "number", "description": "Negative for a credit note." },
+        "billingReference": { "type": ["string", "null"], "description": "Original invoice number, for credit and debit notes." }
+      },
+      "additionalProperties": false
+    },
+    "rejection": {
+      "type": "object",
+      "required": ["reason"],
+      "properties": { "reason": { "type": "string" } },
+      "additionalProperties": false
+    },
+    "corner5": {
+      "type": "object",
+      "required": ["status"],
+      "properties": { "status": { "enum": ["PENDING", "REPORTED", "FAILED"] } },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    { "if": { "properties": { "eventType": { "enum": ["einvoice.issued", "einvoice.received"] } } }, "then": { "required": ["invoice"] } },
+    { "if": { "properties": { "eventType": { "const": "einvoice.rejected" } } }, "then": { "required": ["rejection"] } },
+    { "if": { "properties": { "eventType": { "const": "einvoice.corner5_status" } } }, "then": { "required": ["corner5"] } }
+  ]
+}

@@ -1,0 +1,135 @@
+# Rule pack AE-VAT v1. DRAFT: requires tax team sign-off before any return is filed from it.
+# Spec section 4 is the baseline. Items marked CONFIRM are open questions in docs/tax-team-questions.md.
+jurisdiction: AE
+version: "AE-VAT-1.0"
+effectiveFrom: 2018-01-01
+
+filing:
+  dueDaysAfterPeriodEnd: 28
+  # CONFIRM: whether a deadline on a weekend or public holiday moves to the next working day.
+  # Off by default, because filing on the earlier date is always safe.
+  rollForwardNonWorkingDays: false
+  weekendDays: [SATURDAY, SUNDAY]
+  correctionThresholdAed: 10000
+  unpaidSupplierMonths: 6
+
+rates:
+  standardPct: 5
+
+classification:
+  # Decision table for place of supply. A rule's treatment is used when the tax code has no
+  # mapping. When a mapping exists and disagrees, the mapping stands and the line is flagged for a
+  # person to confirm. Nothing here silently overrides the client's tax code.
+  rules:
+    - id: DZ-GOODS-WITHIN-ZONES
+      description: Goods moving within or between designated zones are outside the scope of VAT.
+      when: { goodsOrServices: GOODS, establishmentDesignatedZone: true, counterpartyDesignatedZone: true }
+      then: { treatment: OUT_OF_SCOPE, placeOfSupply: OUTSIDE_SCOPE_DESIGNATED_ZONE }
+    - id: DZ-GOODS-TO-MAINLAND
+      description: Goods bought by a mainland business from a designated zone supplier may be an import. Check customs.
+      when: { direction: IN, goodsOrServices: GOODS, establishmentDesignatedZone: false, counterpartyDesignatedZone: true }
+      then: { placeOfSupply: UAE, flag: DZ_GOODS_TO_MAINLAND }
+    - id: POS-IMPORTED-SERVICES
+      description: Services bought from a supplier outside the UAE are subject to reverse charge.
+      when: { direction: IN, goodsOrServices: SERVICES, counterpartyInUae: false }
+      then: { treatment: REVERSE_CHARGE, placeOfSupply: UAE }
+    - id: POS-IMPORTED-GOODS-IN-AP
+      description: Goods bought from abroad reach the return through the customs declaration, not AP.
+      when: { direction: IN, goodsOrServices: GOODS, counterpartyInUae: false, source: ERP }
+      then: { placeOfSupply: UAE, flag: IMPORT_CHECK_CUSTOMS }
+    - id: POS-EXPORT-GOODS
+      description: Goods exported from the UAE are zero-rated, subject to evidence (TXC-05, not in the MVP).
+      when: { direction: OUT, goodsOrServices: GOODS, counterpartyInUae: false }
+      then: { treatment: ZERO_RATED, placeOfSupply: OUTSIDE_UAE }
+    - id: POS-EXPORT-SERVICES
+      description: Services to a recipient outside the UAE may be zero-rated. Conditions need a person to confirm.
+      when: { direction: OUT, goodsOrServices: SERVICES, counterpartyInUae: false }
+      then: { treatment: ZERO_RATED, placeOfSupply: OUTSIDE_UAE }
+    - id: POS-DOMESTIC
+      description: Default for a counterparty in the UAE. The tax code decides the treatment.
+      when: { counterpartyInUae: true }
+      then: { placeOfSupply: UAE }
+
+  # Detection only: a match flags the line for review, it does not change the treatment. To apply
+  # domestic reverse charge, map the tax code to DRC. CONFIRM: sources suggest the scope has grown
+  # beyond the spec's four categories, so wider terms are listed to catch them for review.
+  drcPatterns:
+    - { id: DRC-GOLD, category: GOLD, patterns: ["\\bgold\\b", "\\bbullion\\b"] }
+    - { id: DRC-DIAMONDS, category: DIAMONDS, patterns: ["\\bdiamonds?\\b"] }
+    - { id: DRC-OTHER-PRECIOUS, category: PRECIOUS_METALS_STONES, patterns: ["\\bsilver\\b", "\\bplatinum\\b", "\\bpalladium\\b", "\\bpearls?\\b", "\\brub(y|ies)\\b", "\\bsapphires?\\b", "\\bemeralds?\\b"] }
+    - { id: DRC-HYDROCARBONS, category: HYDROCARBONS, patterns: ["\\bcrude\\b", "\\bdiesel\\b", "\\bpetrol\\b", "\\bgasoline\\b", "\\bnatural gas\\b", "\\bhydrocarbons?\\b"] }
+    - { id: DRC-ELECTRONICS, category: ELECTRONIC_DEVICES, patterns: ["\\bmobile phones?\\b", "\\bsmart ?phones?\\b", "\\biphones?\\b", "\\blaptops?\\b", "\\btablets?\\b", "\\bcomputers?\\b"] }
+    - { id: DRC-SCRAP, category: SCRAP_METAL, patterns: ["\\bscrap\\b"] }
+
+  # Description matches block recovery and flag the line, because not claiming is the safe side
+  # until a person confirms. GL and vendor mappings block without a flag.
+  blockedPatterns:
+    - { id: BLOCK-ENTERTAINMENT, category: ENTERTAINMENT, direction: IN, patterns: ["\\bentertainment\\b", "\\bhospitality\\b", "\\bclient dinner\\b", "\\bgift vouchers?\\b"] }
+    - { id: BLOCK-VEHICLE, category: MOTOR_VEHICLE_PRIVATE, direction: IN, patterns: ["\\bprivate (use )?(car|vehicle)\\b", "\\bpersonal (car|vehicle)\\b"] }
+    - { id: BLOCK-EMPLOYEE, category: EMPLOYEE_BENEFIT, direction: IN, patterns: ["\\bstaff (party|gift|gifts)\\b", "\\bemployee (gift|gifts|benefit|benefits)\\b"] }
+
+form:
+  code: VAT201
+  # CONFIRM: box layout against the live EmaraTax form before filing.
+  version: "2026-spec-baseline"
+  boxes:
+    - { code: "1a", section: OUTPUT, columns: [amount, vat, adjustment], filter: { direction: OUT, treatments: [STANDARD], emirate: AUH },
+        label: { en: "Standard rated supplies in Abu Dhabi", ar: "التوريدات الخاضعة للنسبة الأساسية في أبوظبي" },
+        entryGuide: { en: "Output section, row 1a. Enter amount, VAT and any adjustment.", ar: "قسم المخرجات، الصف 1أ. أدخل المبلغ والضريبة وأي تعديل." } }
+    - { code: "1b", section: OUTPUT, columns: [amount, vat, adjustment], filter: { direction: OUT, treatments: [STANDARD], emirate: DXB },
+        label: { en: "Standard rated supplies in Dubai", ar: "التوريدات الخاضعة للنسبة الأساسية في دبي" },
+        entryGuide: { en: "Output section, row 1b. Enter amount, VAT and any adjustment.", ar: "قسم المخرجات، الصف 1ب. أدخل المبلغ والضريبة وأي تعديل." } }
+    - { code: "1c", section: OUTPUT, columns: [amount, vat, adjustment], filter: { direction: OUT, treatments: [STANDARD], emirate: SHJ },
+        label: { en: "Standard rated supplies in Sharjah", ar: "التوريدات الخاضعة للنسبة الأساسية في الشارقة" },
+        entryGuide: { en: "Output section, row 1c. Enter amount, VAT and any adjustment.", ar: "قسم المخرجات، الصف 1ج. أدخل المبلغ والضريبة وأي تعديل." } }
+    - { code: "1d", section: OUTPUT, columns: [amount, vat, adjustment], filter: { direction: OUT, treatments: [STANDARD], emirate: AJM },
+        label: { en: "Standard rated supplies in Ajman", ar: "التوريدات الخاضعة للنسبة الأساسية في عجمان" },
+        entryGuide: { en: "Output section, row 1d. Enter amount, VAT and any adjustment.", ar: "قسم المخرجات، الصف 1د. أدخل المبلغ والضريبة وأي تعديل." } }
+    - { code: "1e", section: OUTPUT, columns: [amount, vat, adjustment], filter: { direction: OUT, treatments: [STANDARD], emirate: UAQ },
+        label: { en: "Standard rated supplies in Umm Al Quwain", ar: "التوريدات الخاضعة للنسبة الأساسية في أم القيوين" },
+        entryGuide: { en: "Output section, row 1e. Enter amount, VAT and any adjustment.", ar: "قسم المخرجات، الصف 1هـ. أدخل المبلغ والضريبة وأي تعديل." } }
+    - { code: "1f", section: OUTPUT, columns: [amount, vat, adjustment], filter: { direction: OUT, treatments: [STANDARD], emirate: RAK },
+        label: { en: "Standard rated supplies in Ras Al Khaimah", ar: "التوريدات الخاضعة للنسبة الأساسية في رأس الخيمة" },
+        entryGuide: { en: "Output section, row 1f. Enter amount, VAT and any adjustment.", ar: "قسم المخرجات، الصف 1و. أدخل المبلغ والضريبة وأي تعديل." } }
+    - { code: "1g", section: OUTPUT, columns: [amount, vat, adjustment], filter: { direction: OUT, treatments: [STANDARD], emirate: FUJ },
+        label: { en: "Standard rated supplies in Fujairah", ar: "التوريدات الخاضعة للنسبة الأساسية في الفجيرة" },
+        entryGuide: { en: "Output section, row 1g. Enter amount, VAT and any adjustment.", ar: "قسم المخرجات، الصف 1ز. أدخل المبلغ والضريبة وأي تعديل." } }
+    - { code: "2", section: OUTPUT, columns: [amount, vat], sign: -1, filter: { direction: OUT, treatments: [TOURIST_REFUND] },
+        label: { en: "Tax refunds provided to tourists", ar: "المبالغ المستردة للسياح" },
+        entryGuide: { en: "Output section, row 2. Enter as negative values. Only for retailers in the scheme.", ar: "قسم المخرجات، الصف 2. أدخل القيم بالسالب. لتجار التجزئة المسجلين في البرنامج فقط." } }
+    - { code: "3", section: OUTPUT, columns: [amount, vat], filter: { direction: IN, treatments: [REVERSE_CHARGE, DRC] },
+        label: { en: "Supplies subject to the reverse charge", ar: "التوريدات الخاضعة لآلية الاحتساب العكسي" },
+        entryGuide: { en: "Output section, row 3. Mirrors the recoverable part in box 10.", ar: "قسم المخرجات، الصف 3. يقابل الجزء القابل للاسترداد في الخانة 10." } }
+    - { code: "4", section: OUTPUT, columns: [amount], filter: { direction: OUT, treatments: [ZERO_RATED] },
+        label: { en: "Zero-rated supplies", ar: "التوريدات الخاضعة لنسبة الصفر" },
+        entryGuide: { en: "Output section, row 4. Enter amount only.", ar: "قسم المخرجات، الصف 4. أدخل المبلغ فقط." } }
+    - { code: "5", section: OUTPUT, columns: [amount], filter: { direction: OUT, treatments: [EXEMPT] },
+        label: { en: "Exempt supplies", ar: "التوريدات المعفاة" },
+        entryGuide: { en: "Output section, row 5. Enter amount only.", ar: "قسم المخرجات، الصف 5. أدخل المبلغ فقط." } }
+    - { code: "6", section: OUTPUT, columns: [amount, vat], filter: { direction: IN, treatments: [IMPORT] },
+        label: { en: "Goods imported into the UAE", ar: "السلع المستوردة إلى الدولة" },
+        entryGuide: { en: "Output section, row 6. From customs declarations.", ar: "قسم المخرجات، الصف 6. من البيانات الجمركية." } }
+    - { code: "7", section: OUTPUT, columns: [amount, vat], filter: { direction: IN, treatments: [IMPORT_ADJUSTMENT] },
+        label: { en: "Adjustments to goods imported into the UAE", ar: "التعديلات على السلع المستوردة إلى الدولة" },
+        entryGuide: { en: "Output section, row 7. Corrections to declared import values.", ar: "قسم المخرجات، الصف 7. تصحيحات قيم الاستيراد المصرح بها." } }
+    - { code: "8", section: OUTPUT, columns: [amount, vat, adjustment], sumOf: ["1a", "1b", "1c", "1d", "1e", "1f", "1g", "2", "3", "4", "5", "6", "7"],
+        label: { en: "Total outputs", ar: "إجمالي المخرجات" },
+        entryGuide: { en: "Calculated by EmaraTax. Check it equals this figure.", ar: "تحسبه منصة إمارات تاكس. تحقق من مطابقته لهذا الرقم." } }
+    - { code: "9", section: INPUT, columns: [amount, vat, adjustment], vatMeasure: recoverable, filter: { direction: IN, treatments: [STANDARD], blocked: false },
+        label: { en: "Standard rated expenses", ar: "المصروفات الخاضعة للنسبة الأساسية" },
+        entryGuide: { en: "Input section, row 9. Enter amount, recoverable VAT and any adjustment.", ar: "قسم المدخلات، الصف 9. أدخل المبلغ والضريبة القابلة للاسترداد وأي تعديل." } }
+    - { code: "10", section: INPUT, columns: [amount, vat], vatMeasure: recoverable, filter: { direction: IN, treatments: [REVERSE_CHARGE, DRC, IMPORT, IMPORT_ADJUSTMENT], blocked: false },
+        label: { en: "Supplies subject to the reverse charge (input)", ar: "التوريدات الخاضعة لآلية الاحتساب العكسي (المدخلات)" },
+        entryGuide: { en: "Input section, row 10. Recoverable part only.", ar: "قسم المدخلات، الصف 10. الجزء القابل للاسترداد فقط." } }
+    - { code: "11", section: INPUT, columns: [amount, vat, adjustment], sumOf: ["9", "10"],
+        label: { en: "Total inputs", ar: "إجمالي المدخلات" },
+        entryGuide: { en: "Calculated by EmaraTax. Check it equals this figure.", ar: "تحسبه منصة إمارات تاكس. تحقق من مطابقته لهذا الرقم." } }
+    - { code: "12", section: NET, columns: [vat], addOf: ["8.vat", "8.adjustment"],
+        label: { en: "Total value of due tax for the period", ar: "إجمالي الضريبة المستحقة عن الفترة" },
+        entryGuide: { en: "Calculated by EmaraTax. Check it equals this figure.", ar: "تحسبه منصة إمارات تاكس. تحقق من مطابقته لهذا الرقم." } }
+    - { code: "13", section: NET, columns: [vat], addOf: ["11.vat", "11.adjustment"],
+        label: { en: "Total value of recoverable tax for the period", ar: "إجمالي الضريبة القابلة للاسترداد عن الفترة" },
+        entryGuide: { en: "Calculated by EmaraTax. Check it equals this figure.", ar: "تحسبه منصة إمارات تاكس. تحقق من مطابقته لهذا الرقم." } }
+    - { code: "14", section: NET, columns: [vat], addOf: ["12.vat"], subtractOf: ["13.vat"],
+        label: { en: "Payable tax for the period (negative means refundable)", ar: "الضريبة المستحقة الدفع عن الفترة (القيمة السالبة تعني قابلة للاسترداد)" },
+        entryGuide: { en: "Calculated by EmaraTax. A negative figure opens the refund option.", ar: "تحسبه منصة إمارات تاكس. القيمة السالبة تتيح خيار الاسترداد." } }

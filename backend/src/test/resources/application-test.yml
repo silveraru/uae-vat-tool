@@ -1,0 +1,15 @@
+app:
+  security:
+    test-keys: true
+    issuer: https://test-issuer
+    jwk-set-uri: http://unused
+  seed:
+    enabled: false
+  worker:
+    enabled: false
+  kafka:
+    enabled: false
+logging:
+  level:
+    root: WARN
+    ae.vattool: INFO

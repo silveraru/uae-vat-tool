@@ -1,0 +1,23 @@
+asyncapi: 3.0.0
+info:
+  title: E-invoice platform events
+  version: 1.0.0
+  description: >
+    Proposed contract between the ASP platform and the VAT tool. The ASP platform team should
+    review it. The VAT tool is built and tested against it through the simulator in asp-simulator.
+    Delivery is at least once and may be out of order across event types; consumers deduplicate on
+    eventId and order on occurredAt. Partition by invoiceUuid.
+channels:
+  einvoiceEvents:
+    address: einvoice.events.v1
+    messages:
+      einvoiceEvent:
+        contentType: application/json
+        payload:
+          $ref: './einvoice-event.schema.json'
+operations:
+  consumeEinvoiceEvents:
+    action: receive
+    channel:
+      $ref: '#/channels/einvoiceEvents'
+    summary: Issued and received invoices, credit and debit notes, rejections, and Corner 5 reporting status.

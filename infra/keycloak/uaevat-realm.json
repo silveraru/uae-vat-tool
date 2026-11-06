@@ -1,0 +1,145 @@
+{
+  "realm": "uaevat",
+  "enabled": true,
+  "displayName": "UAE VAT Tool",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 900,
+  "requiredActions": [
+    {
+      "alias": "CONFIGURE_TOTP",
+      "name": "Configure OTP",
+      "providerId": "CONFIGURE_TOTP",
+      "enabled": true,
+      "defaultAction": true,
+      "priority": 10,
+      "config": {}
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "vat-web",
+      "name": "VAT tool web app",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:5183/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5183"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5183/*"
+      },
+      "protocol": "openid-connect"
+    }
+  ],
+  "users": [
+    {
+      "id": "a0000000-0000-4000-8000-000000000001",
+      "username": "preparer",
+      "email": "preparer@demo.test",
+      "emailVerified": true,
+      "firstName": "Dana",
+      "lastName": "Preparer",
+      "enabled": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo-pass-1",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000002",
+      "username": "approver",
+      "email": "approver@demo.test",
+      "emailVerified": true,
+      "firstName": "Noor",
+      "lastName": "Approver",
+      "enabled": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo-pass-1",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000003",
+      "username": "reviewer",
+      "email": "reviewer@demo.test",
+      "emailVerified": true,
+      "firstName": "Rami",
+      "lastName": "Reviewer",
+      "enabled": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo-pass-1",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000004",
+      "username": "partner",
+      "email": "partner@demo.test",
+      "emailVerified": true,
+      "firstName": "Lina",
+      "lastName": "Partner",
+      "enabled": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo-pass-1",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000005",
+      "username": "admin",
+      "email": "admin@demo.test",
+      "emailVerified": true,
+      "firstName": "Omar",
+      "lastName": "Admin",
+      "enabled": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo-pass-1",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000006",
+      "username": "auditor",
+      "email": "auditor@demo.test",
+      "emailVerified": true,
+      "firstName": "Sami",
+      "lastName": "Auditor",
+      "enabled": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo-pass-1",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

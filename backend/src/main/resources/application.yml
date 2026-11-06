@@ -1,0 +1,59 @@
+server:
+  port: 18090
+
+spring:
+  application:
+    name: uae-vat-tool
+  datasource:
+    url: jdbc:postgresql://localhost:5544/uaevat
+    username: vat_app
+    password: vat_app
+    hikari:
+      maximum-pool-size: 20
+  flyway:
+    user: vat_owner
+    password: vat_owner
+    url: jdbc:postgresql://localhost:5544/uaevat
+    locations: classpath:db/migration
+  servlet:
+    multipart:
+      max-file-size: 500MB
+      max-request-size: 500MB
+  kafka:
+    bootstrap-servers: localhost:19192
+    consumer:
+      group-id: vat-tool-einvoice-bridge
+      auto-offset-reset: earliest
+  mail:
+    host: localhost
+    port: 11025
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+app:
+  security:
+    issuer: http://localhost:18180/realms/uaevat
+    jwk-set-uri: http://localhost:18180/realms/uaevat/protocol/openid-connect/certs
+  seed:
+    enabled: false
+  worker:
+    enabled: true
+  storage:
+    endpoint: http://localhost:19100
+    region: us-east-1
+    access-key: vatminio
+    secret-key: vatminio-secret
+    bucket: vat-vault
+    # GOVERNANCE allows a privileged local reset. Production must use COMPLIANCE.
+    lock-mode: GOVERNANCE
+  kafka:
+    enabled: true
+    topic: einvoice.events.v1
+  asp:
+    backfill-url: http://localhost:18095
+  sftp:
+    inbox: ../.data/sftp-inbox

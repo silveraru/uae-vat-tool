@@ -1,0 +1,19 @@
+package ae.vattool.platform.security;
+
+public enum Permission {
+    VIEW,
+    VIEW_LOCKED_ONLY,
+    VIEW_PORTFOLIO,
+    VIEW_AUDIT_LOG,
+    EDIT_DATA,
+    EDIT_ADJUSTMENTS,
+    SUBMIT_FOR_REVIEW,
+    REVIEW_SIGNOFF,
+    PARTNER_SIGNOFF,
+    APPROVE_AND_LOCK,
+    RECORD_FILING,
+    COMMENT,
+    UPLOAD_EVIDENCE,
+    MANAGE_RULES,
+    ADMINISTER
+}
