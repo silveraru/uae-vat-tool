@@ -12,6 +12,7 @@ filing:
   weekendDays: [SATURDAY, SUNDAY]
   correctionThresholdAed: 10000
   unpaidSupplierMonths: 6
+  unpaidSupplierBox: "9"
 
 rates:
   standardPct: 5

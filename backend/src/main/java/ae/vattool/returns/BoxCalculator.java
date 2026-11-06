@@ -65,6 +65,41 @@ public final class BoxCalculator {
         return out;
     }
 
+    /**
+     * Applies VAT changes to ledger boxes and works out the calculated boxes again. Used by the
+     * correction flow when an error is not represented by changed lines.
+     */
+    public static Map<String, BoxValue> withVatChanges(RulePackDefinition.Form form, Map<String, BoxValue> base,
+                                                       Map<String, BigDecimal> vatChanges) {
+        Map<String, BoxValue> out = new LinkedHashMap<>();
+        for (RulePackDefinition.Box box : form.boxes()) {
+            BoxValue value;
+            if (box.filter() != null) {
+                BoxValue b = base.getOrDefault(box.code(), BoxValue.ZERO);
+                BigDecimal change = vatChanges.getOrDefault(box.code(), BigDecimal.ZERO);
+                value = new BoxValue(b.amount(), b.vat().add(change), b.adjustment());
+            } else if (box.sumOf() != null) {
+                value = BoxValue.ZERO;
+                for (String ref : box.sumOf()) {
+                    value = value.plus(out.get(ref));
+                }
+            } else {
+                BigDecimal total = BigDecimal.ZERO.setScale(2);
+                for (String ref : box.addOf()) {
+                    total = total.add(read(out, ref));
+                }
+                if (box.subtractOf() != null) {
+                    for (String ref : box.subtractOf()) {
+                        total = total.subtract(read(out, ref));
+                    }
+                }
+                value = new BoxValue(BigDecimal.ZERO.setScale(2), total, BigDecimal.ZERO.setScale(2));
+            }
+            out.put(box.code(), value);
+        }
+        return out;
+    }
+
     private static BigDecimal read(Map<String, BoxValue> values, String ref) {
         int dot = ref.indexOf('.');
         return values.get(ref.substring(0, dot)).column(ref.substring(dot + 1));

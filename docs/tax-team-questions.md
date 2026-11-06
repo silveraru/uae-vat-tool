@@ -15,3 +15,4 @@ pack is signed off. Answers usually change configuration in the rule pack, not c
 | 8 | For partial unpaid supplier invoices, is the 6-month reversal pro rata to the unpaid part? | Reversal is pro rata. |
 | 9 | Do the 1 Jan 2026 amendments change any calculation in the MVP? | Treated as no change in calculation: self-invoicing affects documents, the refund time limit affects COR-04 (Phase 2), and input denial for known evasion is a manual judgement. |
 | 10 | Please verify the five golden returns in `fixtures/golden`. | I computed the expected values, so they are not independent evidence. |
+| 11 | A correction to a box with no adjustment column (such as 3, 6, 7 or 10): where should it go in the next return? | It posts to the first output or input box that has an adjustment column, with a description naming the original box. |

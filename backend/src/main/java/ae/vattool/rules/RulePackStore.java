@@ -67,6 +67,21 @@ public class RulePackStore {
         return new ActivePack(find((UUID) row.get("id")), def);
     }
 
+    /** Whether a pack is signed off now. A stored return's pack can be signed off after it was computed. */
+    @Transactional(readOnly = true)
+    public boolean isSignedOff(UUID packId) {
+        return "SIGNED_OFF".equals(jdbc.sql("SELECT status FROM rule_pack WHERE id = ?").param(packId).query(String.class).optional().orElse(null));
+    }
+
+    /** The exact pack a stored return was computed with, whatever is current today. */
+    @Transactional(readOnly = true)
+    public RulePackDefinition definition(UUID packId) {
+        record Row(String contentYaml, String contentHash) {}
+        Row row = jdbc.sql("SELECT content_yaml, content_hash FROM rule_pack WHERE id = ?").param(packId)
+                .query(Row.class).optional().orElseThrow(() -> DomainException.notFound("Rule pack"));
+        return parsedByHash.computeIfAbsent(row.contentHash(), h -> RulePackParser.parse(row.contentYaml()));
+    }
+
     @Transactional(readOnly = true)
     public List<StoredPack> list() {
         return jdbc.sql(SELECT + " ORDER BY effective_from DESC, loaded_at DESC").query(StoredPack.class).list();

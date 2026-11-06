@@ -123,11 +123,11 @@ CREATE TABLE return_pack (
   audit_head    text NOT NULL,
   created_by    text NOT NULL,
   created_at    timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (tenant_id, version_id),
   FOREIGN KEY (tenant_id, period_id) REFERENCES tax_period (tenant_id, id),
   FOREIGN KEY (tenant_id, version_id) REFERENCES return_version (tenant_id, id)
 );
 CALL protect_table('return_pack', 'SELECT, INSERT');
+CREATE INDEX return_pack_period_idx ON return_pack (tenant_id, period_id, created_at DESC);
 
 CREATE TABLE filing (
   id               uuid PRIMARY KEY,

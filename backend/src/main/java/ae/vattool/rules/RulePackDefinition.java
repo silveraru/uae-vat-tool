@@ -34,7 +34,8 @@ public record RulePackDefinition(
             boolean rollForwardNonWorkingDays,
             List<DayOfWeek> weekendDays,
             BigDecimal correctionThresholdAed,
-            int unpaidSupplierMonths) {}
+            int unpaidSupplierMonths,
+            String unpaidSupplierBox) {}
 
     public record Rates(BigDecimal standardPct) {}
 

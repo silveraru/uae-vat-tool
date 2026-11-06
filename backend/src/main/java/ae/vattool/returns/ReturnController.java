@@ -27,14 +27,16 @@ public class ReturnController {
     private final AccessControl access;
     private final JdbcClient jdbc;
     private final PeriodCalendar calendar;
+    private final RulePackStore packs;
 
     public ReturnController(ReturnService returns, DrillDownService drillDown, AccessControl access, JdbcClient jdbc,
-                            PeriodCalendar calendar) {
+                            PeriodCalendar calendar, RulePackStore packs) {
         this.returns = returns;
         this.drillDown = drillDown;
         this.access = access;
         this.jdbc = jdbc;
         this.calendar = calendar;
+        this.packs = packs;
     }
 
     public record ReturnView(TaxPeriod period, ReturnVersionView version, List<BoxDefinition> form, boolean ruleDraft) {}
@@ -100,11 +102,14 @@ public class ReturnController {
     }
 
     private ReturnView view(TaxPeriod p) {
-        RulePackStore.ActivePack pack = returns.packFor(p);
-        ReturnVersionView version = returns.latest(p.id()).orElse(null);
-        List<BoxDefinition> form = pack.definition().form().boxes().stream().map(ReturnController::define).toList();
-        // A locked return is judged by the pack recorded on it, not whichever pack is current today.
-        boolean draft = version != null ? !version.rulePackSignedOff() : !pack.meta().signedOff();
+        RulePackStore.ActivePack current = returns.packFor(p);
+        // A locked return's own version decides what is shown, so a later pack cannot change it.
+        ReturnVersionView version = p.lockedVersionId() != null
+                ? returns.find(p.lockedVersionId()).orElse(null)
+                : returns.latest(p.id()).orElse(null);
+        RulePackDefinition definition = version != null ? packs.definition(version.rulePackId()) : current.definition();
+        List<BoxDefinition> form = definition.form().boxes().stream().map(ReturnController::define).toList();
+        boolean draft = version != null ? !packs.isSignedOff(version.rulePackId()) : !current.meta().signedOff();
         return new ReturnView(p, version, form, draft);
     }
 

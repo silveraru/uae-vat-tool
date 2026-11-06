@@ -16,7 +16,7 @@ class PeriodCalendarTest {
     }
 
     private static RulePackDefinition.Filing filing(boolean rollForward) {
-        return new RulePackDefinition.Filing(28, rollForward, List.of(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY), new BigDecimal("10000"), 6);
+        return new RulePackDefinition.Filing(28, rollForward, List.of(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY), new BigDecimal("10000"), 6, "9");
     }
 
     @Test

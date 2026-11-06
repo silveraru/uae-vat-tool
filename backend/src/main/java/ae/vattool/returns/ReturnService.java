@@ -115,6 +115,44 @@ public class ReturnService {
         return find(id);
     }
 
+    /**
+     * Stores corrected figures as a new version beside the locked one, which is never altered. Both
+     * stay available: what was filed, and what it should have been (spec journey 3).
+     */
+    @Transactional
+    public ReturnVersionView saveCorrected(TaxPeriod period, RulePackStore.ActivePack pack, Map<String, BoxValue> boxes,
+                                           ReturnVersionView original, Map<UUID, Map<String, BoxValue>> perMember) {
+        UUID id = UUID.randomUUID();
+        int number = latest(period.id()).map(v -> v.versionNo() + 1).orElse(1);
+        String valuesJson = canonicalValues(boxes);
+        RulePackDefinition.Form form = pack.definition().form();
+        jdbc.sql("""
+                INSERT INTO return_version (id, tenant_id, entity_id, period_id, version_no, status, form_code, form_version, rule_pack_id,
+                    rule_pack_version, rule_pack_signed_off, box_values, member_values, values_hash, data_fingerprint, diff,
+                    line_count, trigger, created_by)
+                VALUES (:id, :tenant, :entity, :period, :no, 'CORRECTED', :formCode, :formVersion, :packId, :packVersion, :signedOff,
+                    CAST(:boxes AS jsonb), CAST(:members AS jsonb), :hash, :fingerprint, CAST(:diff AS jsonb), 0, 'CORRECTION', :by)
+                """)
+                .param("id", id).param("tenant", RequestContext.requireTenant()).param("entity", period.entityId())
+                .param("period", period.id()).param("no", number).param("formCode", form.code()).param("formVersion", form.version())
+                .param("packId", pack.meta().id()).param("packVersion", pack.meta().version()).param("signedOff", pack.meta().signedOff())
+                .param("boxes", valuesJson).param("members", membersJson(perMember))
+                .param("hash", VaultStorage.sha256(valuesJson + "|" + form.version() + "|" + pack.meta().version()))
+                .param("fingerprint", fingerprint(period.id()))
+                .param("diff", JSON.writeValueAsString(diff(original.boxValues(), boxes)))
+                .param("by", RequestContext.requireActor().actorId())
+                .update();
+        return find(id).orElseThrow();
+    }
+
+    /** Reads stored figures back, for comparing a locked return with its corrected form. */
+    public static Map<String, BoxValue> parseValues(String json) {
+        Map<String, Map<String, String>> raw = JSON.readValue(json, Map.class);
+        Map<String, BoxValue> out = new LinkedHashMap<>();
+        raw.forEach((code, v) -> out.put(code, new BoxValue(new BigDecimal(v.get("amount")), new BigDecimal(v.get("vat")), new BigDecimal(v.get("adjustment")))));
+        return out;
+    }
+
     /** Fast check of whether the ledger for a period has changed: new rows raise one of these values. */
     @Transactional(readOnly = true)
     public String fingerprint(UUID periodId) {
