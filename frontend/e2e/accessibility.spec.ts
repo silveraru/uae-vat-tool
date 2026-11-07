@@ -40,9 +40,17 @@ for (const locale of ["en", "ar"] as const) {
 
     const period = await firstPeriod(page);
     test.skip(period === null, "Needs a period from the full-close test");
-    for (const tab of ["", "/data", "/exceptions", "/lines", "/adjustments", "/review", "/filing", "/evidence", "/corrections"]) {
+    await page.goto("/practice");
+    await audit(page, "practice");
+    for (const tab of ["", "/data", "/exceptions", "/lines", "/suggestions", "/adjustments", "/schemes", "/exports", "/review", "/filing", "/refund", "/evidence", "/corrections"]) {
       await page.goto(`${period}${tab}`);
       await audit(page, `period${tab || "/return"}`);
+    }
+    await page.goto(period!);
+    const entity = await page.getByRole("heading", { level: 1 }).getByRole("link").getAttribute("href");
+    for (const path of ["", "/analytics", "/audit-cases"]) {
+      await page.goto(`${entity}${path}`);
+      await audit(page, `client${path || " page"}`);
     }
   });
 }

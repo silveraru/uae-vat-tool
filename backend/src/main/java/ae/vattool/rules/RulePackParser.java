@@ -90,6 +90,29 @@ public final class RulePackParser {
                 }
             }
         }
+        if (pack.penalties() != null) {
+            for (RulePackDefinition.PenaltySchedule p : pack.penalties()) {
+                if (p.effectiveFrom() == null || p.source() == null || p.latePaymentAnnualPct() == null || p.disclosureMonthlyPct() == null) {
+                    problems.add("each penalty schedule needs effectiveFrom, source, latePaymentAnnualPct and disclosureMonthlyPct");
+                }
+            }
+        }
+        if (pack.apportionment() != null && (pack.apportionment().methods() == null || pack.apportionment().methods().stream()
+                .anyMatch(m -> !Set.of("INPUT_BASED", "OUTPUT_BASED").contains(m.method()) || m.fromTaxYearStarting() == null))) {
+            problems.add("apportionment methods must be INPUT_BASED or OUTPUT_BASED, each with fromTaxYearStarting");
+        }
+        if (pack.suggestions() != null && pack.suggestions().keywords() != null) {
+            for (RulePackDefinition.SuggestionKeyword k : pack.suggestions().keywords()) {
+                if (!TREATMENTS.contains(k.treatment())) {
+                    problems.add("suggestion keyword " + k.pattern() + " uses unknown treatment " + k.treatment());
+                }
+                try {
+                    java.util.regex.Pattern.compile(k.pattern());
+                } catch (java.util.regex.PatternSyntaxException e) {
+                    problems.add("suggestion keyword " + k.pattern() + " is not a valid pattern");
+                }
+            }
+        }
         return problems;
     }
 }

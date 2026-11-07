@@ -1,0 +1,25 @@
+# Odoo's external API is JSON-RPC, so its list export is the simple route for a first version.
+system: ODOO
+label: Odoo (list export)
+status: UNVERIFIED
+transport: FILE
+note: Export from the invoices list with these fields. Odoo names export columns after the field labels in your language and version.
+kinds:
+  AR:
+    constants: { doc_type: TAX_INVOICE }
+    fields:
+      doc_number: number
+      doc_date: invoice/bill_date
+      net_amount: untaxed_amount
+      vat_amount: tax
+      counterparty_trn: partner/tax_id
+      counterparty_name: partner
+  AP:
+    constants: { doc_type: TAX_INVOICE, has_tax_invoice: "true" }
+    fields:
+      doc_number: number
+      doc_date: invoice/bill_date
+      net_amount: untaxed_amount
+      vat_amount: tax
+      counterparty_trn: partner/tax_id
+      counterparty_name: partner

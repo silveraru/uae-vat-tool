@@ -110,18 +110,22 @@ public class EntityService {
     /** Settings that can change after onboarding. TRN and calendar are fixed once periods exist. */
     @Transactional
     public LegalEntity updateSettings(UUID id, BigDecimal defaultRecoveryPct, BigDecimal partnerThresholdAed,
-                                      Boolean requireReviewer, LocalDate einvoiceGoLive) {
+                                      Boolean requireReviewer, LocalDate einvoiceGoLive, String ftaGiban, Boolean requireEsignature, Integer taxYearStartMonth) {
         LegalEntity before = get(id);
         jdbc.sql("""
                 UPDATE legal_entity SET
                   default_recovery_pct = COALESCE(:recovery, default_recovery_pct),
                   partner_threshold_aed = :threshold,
                   require_reviewer = COALESCE(:reviewer, require_reviewer),
-                  einvoice_go_live = :goLive
+                  einvoice_go_live = :goLive,
+                  fta_giban = COALESCE(:giban, fta_giban),
+                  require_esignature = COALESCE(:esignature, require_esignature),
+                  tax_year_start_month = COALESCE(:taxYearMonth, tax_year_start_month)
                 WHERE id = :id
                 """)
                 .param("recovery", defaultRecoveryPct).param("threshold", partnerThresholdAed)
-                .param("reviewer", requireReviewer).param("goLive", einvoiceGoLive).param("id", id)
+                .param("reviewer", requireReviewer).param("goLive", einvoiceGoLive).param("giban", ftaGiban)
+                .param("esignature", requireEsignature).param("taxYearMonth", taxYearStartMonth).param("id", id)
                 .update();
         LegalEntity after = get(id);
         audit.record("ENTITY_SETTINGS_CHANGED", "LEGAL_ENTITY", id, id, before, after, null);

@@ -40,7 +40,15 @@ public class WorkflowService {
                           OffsetDateTime signedAt, OffsetDateTime invalidatedAt, String invalidatedReason) {}
 
     public record Status(TaxPeriod period, List<Signoff> signoffs, List<String> requiredSteps, boolean partnerRequired,
-                         int blockingExceptions, int warnings, List<String> blockers, boolean canApprove) {}
+                         int blockingExceptions, int warnings, List<String> blockers, boolean canApprove, boolean esignatureRequired, List<Signature> signatures) {}
+
+    /** A client's electronic signature on an approval (WF-04), with the identity it was made under. */
+    public record SignatureInput(String typedName, boolean consent) {}
+
+    public record Signature(UUID id, String typedName, String signerEmail, String consentVersion, String signatureHash, OffsetDateTime signedAt) {}
+
+    /** Bumped when the consent wording changes, so each signature records which wording it agreed to. */
+    public static final String CONSENT_VERSION = "2026-11-v1";
 
     private static final String SIGNOFF_SELECT = """
             SELECT s.id, s.step, s.version_id, s.values_hash, s.user_id, u.display_name AS user_name, s.note, s.signed_at,
@@ -116,6 +124,11 @@ public class WorkflowService {
      */
     @Transactional
     public Status approve(UUID periodId, String note) {
+        return approve(periodId, note, null, null, null);
+    }
+
+    @Transactional
+    public Status approve(UUID periodId, String note, SignatureInput signature, String ipAddress, String userAgent) {
         recon.run(periodId, "APPROVAL");
         TaxPeriod p = lock(periodId);
         requireState(p, "IN_REVIEW");
@@ -126,6 +139,10 @@ public class WorkflowService {
                     "This return cannot be approved yet: " + String.join("; ", blockers), Map.of("blockers", blockers));
         }
         ReturnVersionView v = latest(p);
+        LegalEntity entity = entity(p);
+        if (entity.requireEsignature() || signature != null) {
+            recordSignature(p, v, entity, signature, ipAddress, userAgent);
+        }
         sign(p, v, "APPROVED", note);
         jdbc.sql("UPDATE return_version SET status = 'LOCKED' WHERE id = ?").param(v.id()).update();
         jdbc.sql("UPDATE tax_period SET state = 'APPROVED', locked_version_id = ?, locked_at = now() WHERE id = ?")
@@ -149,6 +166,42 @@ public class WorkflowService {
         audit.record("RETURN_APPROVED_AND_LOCKED", "TAX_PERIOD", p.id(), p.entityId(), Map.of("state", "IN_REVIEW"),
                 Map.of("state", "APPROVED", "version", v.versionNo(), "valuesHash", v.valuesHash()), note);
         return status(periodId);
+    }
+
+    /**
+     * The signature binds a named, signed-in person to the exact figures. Where signatories are on
+     * file, only one of them can sign, so anyone else holding the approver role is refused.
+     */
+    private void recordSignature(TaxPeriod p, ReturnVersionView v, LegalEntity entity, SignatureInput in, String ipAddress, String userAgent) {
+        if (in == null || in.typedName() == null || in.typedName().isBlank() || !in.consent()) {
+            throw DomainException.invalid("ESIGNATURE_REQUIRED", "This client approves by e-signature: type your name and give your consent");
+        }
+        record Signer(String displayName, String email) {}
+        UUID user = RequestContext.requireUserId();
+        Signer signer = jdbc.sql("SELECT display_name, email FROM app_user WHERE id = ?").param(user).query(Signer.class).single();
+        record Authorised(UUID id, String name, String email) {}
+        List<Authorised> onFile = jdbc.sql("""
+                SELECT id, name, email FROM authorised_signatory
+                WHERE entity_id = ? AND valid_from <= CURRENT_DATE AND (valid_to IS NULL OR valid_to >= CURRENT_DATE)
+                """).param(entity.id()).query(Authorised.class).list();
+        Authorised signatory = onFile.stream().filter(a -> a.email().equalsIgnoreCase(signer.email())).findFirst().orElse(null);
+        if (!onFile.isEmpty() && signatory == null) {
+            throw new DomainException(org.springframework.http.HttpStatus.FORBIDDEN, "NOT_AUTHORISED_SIGNATORY", "You are not an authorised signatory of this entity");
+        }
+        String expected = signatory != null ? signatory.name() : signer.displayName();
+        if (!in.typedName().trim().equalsIgnoreCase(expected.trim())) {
+            throw DomainException.invalid("ESIGNATURE_NAME_MISMATCH", "The name typed does not match the signatory on file");
+        }
+        java.time.OffsetDateTime at = java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        String hash = VaultStorage.sha256(String.join("|", p.id().toString(), v.valuesHash(), user.toString(), in.typedName().trim(), signer.email(), CONSENT_VERSION, at.toString()));
+        jdbc.sql("""
+                INSERT INTO esignature (id, tenant_id, entity_id, period_id, version_id, values_hash, signer_user_id, typed_name, signer_email, signatory_id, consent_version, ip_address, user_agent, signature_hash, signed_at)
+                VALUES (:id, :tenant, :entity, :period, :version, :hash, :user, :typed, :email, :signatory, :consent, :ip, :agent, :signature, :at)
+                """)
+                .param("id", UUID.randomUUID()).param("tenant", RequestContext.requireTenant()).param("entity", p.entityId()).param("period", p.id()).param("version", v.id())
+                .param("hash", v.valuesHash()).param("user", user).param("typed", in.typedName().trim()).param("email", signer.email()).param("signatory", signatory == null ? null : signatory.id())
+                .param("consent", CONSENT_VERSION).param("ip", ipAddress).param("agent", userAgent).param("signature", hash).param("at", at)
+                .update();
     }
 
     /** Sends it back for changes. A person's reason is required, since this undoes others' sign-offs. */
@@ -196,8 +249,11 @@ public class WorkflowService {
         int warnings = jdbc.sql("""
                 SELECT COUNT(*) FROM recon_exception WHERE period_id = ? AND severity = 'WARNING' AND status IN ('OPEN','ASSIGNED')
                 """).param(periodId).query(Integer.class).single();
+        List<Signature> signatures = jdbc.sql("""
+                SELECT id, typed_name, signer_email, consent_version, signature_hash, signed_at FROM esignature WHERE period_id = ? ORDER BY signed_at DESC
+                """).param(periodId).query(Signature.class).list();
         return new Status(p, signoffs, required, partner, recon.blockingOpen(periodId), warnings, blockers,
-                "IN_REVIEW".equals(p.state()) && blockers.isEmpty());
+                "IN_REVIEW".equals(p.state()) && blockers.isEmpty(), entity(p).requireEsignature(), signatures);
     }
 
     private List<String> requiredSteps(TaxPeriod p, boolean partner) {

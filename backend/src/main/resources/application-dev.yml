@@ -2,3 +2,18 @@ app:
   seed:
     enabled: true
     demo-data: true
+  # Lets a webhook or connector reach a stub on this machine. Never set this in production.
+  outbound:
+    allow-internal: true
+# Sends every trace to the local Jaeger in docker-compose, at http://localhost:16686 (NFR-14).
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+    export:
+      enabled: true
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: http://localhost:14318/v1/traces

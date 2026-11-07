@@ -130,10 +130,13 @@ test("a full period close from onboarding to correction", async ({ browser }) =>
   await reviewer.goto(`${href}/filing`);
   await reviewer.getByRole("button", { name: "Generate pack" }).click();
   await expect(reviewer.getByRole("status").filter({ hasText: "NOT FOR FILING" })).toBeVisible();
-  const [download] = await Promise.all([reviewer.waitForEvent("download"), reviewer.getByRole("button", { name: "PDF" }).click()]);
+  const [download] = await Promise.all([reviewer.waitForEvent("download"), reviewer.getByRole("button", { name: "PDF", exact: true }).click()]);
   const pdfPath = await download.path();
   expect(readFileSync(pdfPath).subarray(0, 4).toString()).toBe("%PDF");
   await download.saveAs(`test-results/return-pack-${stamp}.pdf`);
+  const [arabic] = await Promise.all([reviewer.waitForEvent("download"), reviewer.getByRole("button", { name: "PDF in Arabic" }).click()]);
+  expect(readFileSync(await arabic.path()).subarray(0, 4).toString()).toBe("%PDF");
+  await arabic.saveAs(`test-results/return-pack-${stamp}-ar.pdf`);
 
   // --- Records the EmaraTax submission, then the payment, matched to the bank ---
   await reviewer.getByLabel("Submission reference").fill(`EMT-${stamp}`);

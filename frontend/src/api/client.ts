@@ -62,6 +62,9 @@ export const api = {
       }),
     );
   },
+  async delete<T>(path: string): Promise<T> {
+    return parse<T>(await fetch(`/api${path}`, { method: "DELETE", headers: await authHeaders() }));
+  },
   async upload<T>(path: string, file: File, fields: Record<string, string> = {}): Promise<T> {
     const form = new FormData();
     form.append("file", file);

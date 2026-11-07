@@ -1,0 +1,29 @@
+# NetSuite's REST route needs OAuth 1 signing per request, so a saved search export is the practical start.
+system: NETSUITE
+label: Oracle NetSuite (saved search export)
+status: UNVERIFIED
+transport: FILE
+note: Build a saved search with these columns and export it as CSV. Column names are whatever the search calls them, so name them to match.
+kinds:
+  AR:
+    constants: { doc_type: TAX_INVOICE }
+    fields:
+      doc_number: document_number
+      doc_date: date
+      net_amount: amount_(net)
+      vat_amount: amount_(tax)
+      currency: currency
+      counterparty_trn: tax_number
+      counterparty_name: name
+      tax_code: tax_item
+  AP:
+    constants: { doc_type: TAX_INVOICE, has_tax_invoice: "true" }
+    fields:
+      doc_number: document_number
+      doc_date: date
+      net_amount: amount_(net)
+      vat_amount: amount_(tax)
+      currency: currency
+      counterparty_trn: tax_number
+      counterparty_name: name
+      tax_code: tax_item

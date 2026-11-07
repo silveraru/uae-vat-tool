@@ -27,7 +27,7 @@ public class EinvoiceStore {
                            LocalDate issueDate, String supplierTrn, String buyerTrn, String currency,
                            java.math.BigDecimal netAed, java.math.BigDecimal vatAed, String billingReference,
                            String lifecycleStatus, String rejectionReason, String corner5Status,
-                           OffsetDateTime corner5At, boolean hasInvoiceData) {}
+                           OffsetDateTime corner5At, boolean hasInvoiceData, String source) {}
 
     private static final ObjectMapper JSON = JsonMapper.builder().build();
 
@@ -119,7 +119,7 @@ public class EinvoiceStore {
     public List<Einvoice> list(UUID filerId, LocalDate from, LocalDate to) {
         return jdbc.sql("""
                 SELECT invoice_uuid, filer_entity_id, direction, doc_type, number, issue_date, supplier_trn, buyer_trn, currency,
-                       net_aed, vat_aed, billing_reference, lifecycle_status, rejection_reason, corner5_status, corner5_at, has_invoice_data
+                       net_aed, vat_aed, billing_reference, lifecycle_status, rejection_reason, corner5_status, corner5_at, has_invoice_data, source
                 FROM einvoice WHERE filer_entity_id = :filer AND issue_date BETWEEN :from AND :to
                 ORDER BY issue_date, number LIMIT 5000
                 """)

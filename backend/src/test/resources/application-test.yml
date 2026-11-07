@@ -9,6 +9,8 @@ app:
     enabled: false
   kafka:
     enabled: false
+  outbound:
+    allow-internal: true
 logging:
   level:
     root: WARN

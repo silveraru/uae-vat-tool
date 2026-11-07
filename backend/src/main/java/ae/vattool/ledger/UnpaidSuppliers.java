@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Where each supplier invoice stands under the 6-month rule (ADJ-01). Check R11 and the adjustments
  * service both read this, so "needs reversing" cannot mean different things in each. Payment comes
- * from ERP AP status until bank statement import exists (Phase 2).
+ * from ERP AP status or a matched bank statement, whichever shows more paid by the period end.
  */
 @Service
 public class UnpaidSuppliers {
@@ -24,8 +24,8 @@ public class UnpaidSuppliers {
                            BigDecimal currentlyReversed, BigDecimal targetReversed, BigDecimal delta) {}
 
     private record Row(UUID id, String docNumber, String counterpartyTrn, LocalDate agreedPaymentDate, LocalDate docDate,
-                       LocalDate paidDate, BigDecimal paidAmountAed, BigDecimal gross, BigDecimal recoverable,
-                       BigDecimal reversed) {}
+                       LocalDate paidDate, BigDecimal paidAmountAed, LocalDate bankPaidDate, BigDecimal bankPaidAmountAed,
+                       BigDecimal gross, BigDecimal recoverable, BigDecimal reversed) {}
 
     private final JdbcClient jdbc;
 
@@ -39,6 +39,7 @@ public class UnpaidSuppliers {
         // An invoice with no agreed date falls back to its own date, which is flagged for review.
         List<Row> rows = jdbc.sql("""
                 SELECT d.id, d.doc_number, d.counterparty_trn, d.agreed_payment_date, d.doc_date, d.paid_date, d.paid_amount_aed,
+                       d.bank_paid_date, d.bank_paid_amount_aed,
                        COALESCE(d.gross_aed, SUM(l.net_aed + ROUND(l.vat_doc * l.fx_rate, 2)), 0) AS gross,
                        COALESCE(d.opening_recoverable_vat_aed, SUM(l.recoverable_vat_aed), 0) AS recoverable,
                        COALESCE((SELECT SUM(r.vat_aed) FROM supplier_reversal r WHERE r.document_id = d.id), 0) AS reversed
@@ -73,9 +74,10 @@ public class UnpaidSuppliers {
 
     /** Payment counts only if made by the period end. A paid date with no amount means paid in full. */
     private static BigDecimal paidAsOf(Row r, LocalDate periodEnd) {
-        if (r.paidDate() == null || r.paidDate().isAfter(periodEnd)) {
-            return BigDecimal.ZERO;
-        }
-        return r.paidAmountAed() != null ? r.paidAmountAed() : r.gross();
+        BigDecimal erp = r.paidDate() == null || r.paidDate().isAfter(periodEnd) ? BigDecimal.ZERO
+                : r.paidAmountAed() != null ? r.paidAmountAed() : r.gross();
+        BigDecimal bank = r.bankPaidDate() == null || r.bankPaidDate().isAfter(periodEnd) || r.bankPaidAmountAed() == null
+                ? BigDecimal.ZERO : r.bankPaidAmountAed();
+        return erp.max(bank);
     }
 }

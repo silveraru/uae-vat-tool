@@ -69,3 +69,23 @@ app:
     backfill-url: http://localhost:18095
   sftp:
     inbox: ../.data/sftp-inbox
+  # Who wraps each tenant's data key (NFR-03). "local" is for development and refuses to start under
+  # the prod profile. Set kms to "aws" with aws-key-id in a UAE region to use a real key service.
+  crypto:
+    kms: local
+    local-master-key: dGhpcy1pcy1hLWRldmVsb3BtZW50LW9ubHkta2V5ISE=
+  # URLs a user gives (webhooks, connectors) may not reach internal addresses unless this is on.
+  outbound:
+    allow-internal: false
+  # Peppol participant lookup for check R08, off until the ASP team confirms the domain to query.
+  peppol:
+    lookup:
+      enabled: false
+      sml-domain: edelivery.tech.ec.europa.eu
+  # A source of Central Bank rates, as CSV with currency,rate_date,aed_per_unit. Off until one is chosen.
+  fx:
+    feed:
+      url: ""
+  fta:
+    # Stays off until the FTA publishes a VAT201 API (FIL-04). Do not point this at EmaraTax's web pages.
+    direct-submission-enabled: false

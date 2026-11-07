@@ -1,0 +1,20 @@
+# Starter mapping from Zoho Books' public API. Not run against a live organisation.
+system: ZOHO_BOOKS
+label: Zoho Books
+status: UNVERIFIED
+transport: REST
+note: Add organization_id to the base URL's query when you set this up. The list endpoint may not return tax totals for every plan, so check a sample first.
+kinds:
+  AR:
+    path: /books/v3/invoices
+    params: { date_start: "{from}", date_end: "{to}" }
+    itemsPath: invoices
+    paging: { param: page, start: 1, sizeParam: per_page, size: 200, style: PAGE }
+    constants: { doc_type: TAX_INVOICE }
+    fields:
+      doc_number: invoice_number
+      doc_date: date
+      net_amount: sub_total
+      vat_amount: tax_total
+      currency: currency_code
+      counterparty_name: customer_name

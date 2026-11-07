@@ -47,7 +47,7 @@ class CrossEntityAccessTest extends IntegrationTest {
 
     @Test
     void everyReadRouteForAnotherEntityIsRefused() throws Exception {
-        s.client.post(s.reviewer, "/api/periods/" + theirPeriod + "/recompute", null);
+        s.client.post(s.preparer, "/api/periods/" + theirPeriod + "/recompute", null);
         for (String path : List.of(
                 "/api/entities/" + theirs,
                 "/api/entities/" + theirs + "/periods",

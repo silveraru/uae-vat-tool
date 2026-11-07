@@ -1,0 +1,21 @@
+# Starter mapping from SAP's public OData API names. Not run against a live S/4HANA system.
+# IDoc is not covered: export to a file and use the Tally-style FILE route, or use OData.
+system: SAP
+label: SAP S/4HANA (OData)
+status: UNVERIFIED
+transport: REST
+note: Field names follow API_BILLING_DOCUMENT_SRV and API_SUPPLIERINVOICE_PROCESS_SRV. Check them against your system before relying on this. IDoc is not covered.
+kinds:
+  AR:
+    path: /sap/opu/odata/sap/API_BILLING_DOCUMENT_SRV/A_BillingDocument
+    params: { "$format": json, "$filter": "BillingDocumentDate ge datetime'{from}T00:00:00' and BillingDocumentDate le datetime'{to}T23:59:59'" }
+    itemsPath: d.results
+    paging: { param: "$skip", start: 0, sizeParam: "$top", size: 500, style: OFFSET }
+    constants: { doc_type: TAX_INVOICE }
+    fields:
+      doc_number: BillingDocument
+      doc_date: BillingDocumentDate
+      net_amount: TotalNetAmount
+      vat_amount: TotalTaxAmount
+      currency: TransactionCurrency
+      counterparty_name: SoldToParty

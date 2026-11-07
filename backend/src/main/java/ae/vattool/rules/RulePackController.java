@@ -38,6 +38,18 @@ public class RulePackController {
         return store.upload(yaml);
     }
 
+    @GetMapping("/bundled")
+    public RulePackStore.Bundled bundled() {
+        access.requireTenantWide(Permission.MANAGE_RULES);
+        return store.bundled();
+    }
+
+    @PostMapping("/install-bundled")
+    public RulePackStore.StoredPack installBundled() {
+        access.requireTenantWide(Permission.MANAGE_RULES);
+        return store.installBundled();
+    }
+
     @PostMapping("/{id}/sign-off")
     public RulePackStore.StoredPack signOff(@PathVariable UUID id,
                                             @jakarta.validation.Valid @RequestBody SignOff body) {

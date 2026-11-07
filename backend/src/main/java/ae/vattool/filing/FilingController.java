@@ -25,8 +25,10 @@ public class FilingController {
     private final FilingService filings;
     private final PeriodCalendar calendar;
     private final AccessControl access;
+    private final SubmissionAdapter submission;
 
-    public FilingController(ReturnPackService packs, FilingService filings, PeriodCalendar calendar, AccessControl access) {
+    public FilingController(ReturnPackService packs, FilingService filings, PeriodCalendar calendar, AccessControl access, SubmissionAdapter submission) {
+        this.submission = submission;
         this.packs = packs;
         this.filings = filings;
         this.calendar = calendar;
@@ -55,6 +57,23 @@ public class FilingController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(d.fileName()).build().toString())
                 .contentType(MediaType.parseMediaType(d.contentType()))
                 .body(d.content());
+    }
+
+    public record DirectSubmission(boolean available, String reason) {}
+
+    @GetMapping("/direct-submission")
+    public DirectSubmission directSubmission(@PathVariable UUID id) {
+        TaxPeriod p = calendar.get(id);
+        access.requireReadPeriod(p.entityId(), p.isLocked());
+        return new DirectSubmission(submission.available(), submission.unavailableReason().orElse(null));
+    }
+
+    @PostMapping("/direct-submission")
+    public void submitDirectly(@PathVariable UUID id) {
+        access.require(calendar.get(id).entityId(), Permission.RECORD_FILING);
+        if (!submission.available()) {
+            throw DomainException.conflict("DIRECT_SUBMISSION_UNAVAILABLE", submission.unavailableReason().orElse("Direct submission is not available"));
+        }
     }
 
     @GetMapping("/filing")

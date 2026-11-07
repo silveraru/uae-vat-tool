@@ -33,7 +33,8 @@ public abstract class IntegrationTest {
 
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16")
             .withDatabaseName("uaevat")
-            .withInitScript("init-roles.sql");
+            .withInitScript("init-roles.sql")
+            .withSharedMemorySize(1024L * 1024 * 1024);
 
     static final String MINIO_USER = "testminio";
     static final String MINIO_PASSWORD = "testminio-secret";

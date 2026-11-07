@@ -1,9 +1,10 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
-import type { WorkflowStatus } from "../../api/types";
+import type { Anomaly, WorkflowStatus } from "../../api/types";
 import { Query } from "../../components/Query";
-import { Badge, ErrorAlert, ReasonAction, useAction, useRoles } from "../../components/ui";
+import { Badge, ErrorAlert, Field, Money, ReasonAction, useAction, useRoles } from "../../components/ui";
 import { usePeriod } from "./PeriodLayout";
 import { Comments } from "./ReturnTab";
 
@@ -15,6 +16,8 @@ export function ReviewTab() {
   const q = useQuery({ queryKey: key, queryFn: () => api.get<WorkflowStatus>(`/periods/${periodId}/workflow`), refetchInterval: 5000 });
   const refresh = [key, ["return", periodId], ["versions", periodId], ["exceptions", periodId], ["portfolio"]];
   const act = useAction(({ path, body }: { path: string; body?: unknown }) => api.post(`/periods/${periodId}/${path}`, body), refresh);
+  const [signature, setSignature] = useState({ typedName: "", consent: false });
+  const anomalies = useQuery({ queryKey: ["anomalies", periodId], queryFn: () => api.get<Anomaly[]>(`/periods/${periodId}/analytics/anomalies`) });
   return (
     <Query query={q}>
       {(w) => {
@@ -48,11 +51,50 @@ export function ReviewTab() {
                 {state === "OPEN" && roles.isPreparer && <button type="button" className="primary" disabled={act.isPending} onClick={() => act.mutate({ path: "submit" })}>{t("review.submit")}</button>}
                 {state === "IN_REVIEW" && roles.isReviewer && !has("REVIEWED") && <button type="button" className="primary" disabled={act.isPending} onClick={() => act.mutate({ path: "review" })}>{t("review.review")}</button>}
                 {state === "IN_REVIEW" && roles.isPartner && w.partnerRequired && !has("PARTNER") && <button type="button" className="primary" disabled={act.isPending} onClick={() => act.mutate({ path: "partner-signoff" })}>{t("review.partner")}</button>}
-                {state === "IN_REVIEW" && roles.isApprover && <button type="button" className="primary" disabled={act.isPending} onClick={() => act.mutate({ path: "approve" })}>{t("review.approve")}</button>}
+                {state === "IN_REVIEW" && roles.isApprover && !w.esignatureRequired && <button type="button" className="primary" disabled={act.isPending} onClick={() => act.mutate({ path: "approve" })}>{t("review.approve")}</button>}
                 {state === "IN_REVIEW" && roles.canWaive && <ReasonAction label={t("review.sendBack")} onSubmit={(reason) => act.mutate({ path: "send-back", body: { reason } })} />}
                 {state === "APPROVED" && roles.isApprover && <ReasonAction label={t("review.withdraw")} danger onSubmit={(reason) => act.mutate({ path: "withdraw-approval", body: { reason } })} />}
               </div>
+              {state === "IN_REVIEW" && roles.isApprover && w.esignatureRequired && (
+                <form style={{ marginBlockStart: 12 }} onSubmit={(e) => { e.preventDefault(); act.mutate({ path: "approve", body: { signature } }); }}>
+                  <h3>{t("esign.title")}</h3>
+                  <p className="muted">{t("esign.explain")}</p>
+                  <div className="form-grid">
+                    <Field label={t("esign.name")}><input required autoComplete="name" value={signature.typedName} onChange={(e) => setSignature({ ...signature, typedName: e.target.value })} /></Field>
+                  </div>
+                  <label className="check-row">
+                    <input type="checkbox" required checked={signature.consent} onChange={(e) => setSignature({ ...signature, consent: e.target.checked })} />
+                    {t("esign.consent")}
+                  </label>
+                  <button type="submit" className="primary" disabled={act.isPending}>{t("esign.sign")}</button>
+                </form>
+              )}
+              {w.signatures.length > 0 && (
+                <p className="muted" style={{ marginBlockStart: 12 }}>{t("esign.signed", { name: w.signatures[0].typedName, when: w.signatures[0].signedAt.slice(0, 16).replace("T", " ") })}</p>
+              )}
             </section>
+            {anomalies.data && anomalies.data.length > 0 && (
+              <section className="card">
+                <h2>{t("analytics.anomalies")}</h2>
+                <p className="muted">{t("analytics.anomaliesExplain")}</p>
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>{t("analytics.flag")}</th><th>{t("return.box")}</th><th className="num">{t("analytics.value")}</th><th className="num">{t("analytics.baseline")}</th><th className="num">{t("analytics.change")}</th></tr></thead>
+                    <tbody>
+                      {anomalies.data.map((a) => (
+                        <tr key={`${a.code}-${a.box}-${a.counterparty}`}>
+                          <td>{t(`analytics.code.${a.code}`)}{a.counterparty && <> <span className="muted ltr">{a.counterparty}</span></>}</td>
+                          <td className="ltr">{a.box ?? "–"}</td>
+                          <td className="num"><Money value={a.value} /></td>
+                          <td className="num"><Money value={a.baseline} /></td>
+                          <td className="num">{a.changePct === null ? "–" : `${Number(a.changePct)}%`}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
             <section className="card table-wrap">
               <h2>{t("review.history")}</h2>
               {w.signoffs.length === 0 ? <p className="muted">{t("common.none")}</p> : (

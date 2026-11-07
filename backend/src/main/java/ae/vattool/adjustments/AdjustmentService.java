@@ -100,6 +100,29 @@ public class AdjustmentService {
         return get(id);
     }
 
+    /** A proposal built by a scheme's own checks. It waits for a second person like any other. */
+    @Transactional
+    public UUID proposeCalculated(TaxPeriod period, String type, String box, BigDecimal vat, String description, String reason, UUID document, UUID evidenceId) {
+        requireOpen(period);
+        UUID id = UUID.randomUUID();
+        insert(id, period, type, box, null, BigDecimal.ZERO, vat, description, reason, document, evidenceId, "PROPOSED");
+        return id;
+    }
+
+    /** A calculated adjustment that posts at once and is reviewed with the return, as the six-month rule does. */
+    @Transactional
+    public UUID postCalculated(TaxPeriod period, String type, String box, BigDecimal vat, String description, String reason, String decidedBy) {
+        requireOpen(period);
+        UUID id = UUID.randomUUID();
+        insert(id, period, type, box, null, BigDecimal.ZERO, vat, description, reason, null, null, "APPROVED");
+        RulePackDefinition.Box definition = findBox(period, box);
+        UUID line = ledger.writeAdjustment(period.entityId(), period.id(), period.periodEnd(), box, "INPUT".equals(definition.section()) ? "IN" : "OUT",
+                BigDecimal.ZERO, vat, id, null, description, type);
+        jdbc.sql("UPDATE adjustment SET line_id = :line, decided_by = :by, decided_at = now() WHERE id = :id")
+                .param("line", line).param("by", decidedBy).param("id", id).update();
+        return id;
+    }
+
     /** Approval posts the adjustment to the ledger. The creator cannot approve their own. */
     @Transactional
     public Adjustment decide(UUID id, boolean approve, String note) {

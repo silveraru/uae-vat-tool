@@ -46,23 +46,17 @@ public class DrillDownService {
         if (box.isComputed()) {
             throw DomainException.invalid("BOX_IS_COMPUTED", "Box " + boxCode + " is calculated from other boxes. Open those instead.");
         }
-        List<String> where = new ArrayList<>();
         Map<String, Object> params = new HashMap<>();
         params.put("period", period.id());
         params.put("box", boxCode);
-        where.add("l.period_id = :period");
-        where.add("l.superseded_at IS NULL");
-        where.add("l.memo = false");
+        String current = "l.period_id = :period AND l.superseded_at IS NULL AND l.memo = false";
+        String adjustments = current + " AND l.line_kind = 'ADJUSTMENT' AND l.adj_box = :box";
 
-        List<String> normal = new ArrayList<>(List.of("l.line_kind = 'NORMAL'"));
+        List<String> normal = new ArrayList<>(List.of(current, "l.line_kind = 'NORMAL'"));
         RulePackDefinition.Filter f = box.filter();
         if (f.direction() != null) {
             normal.add("l.direction = :direction");
             params.put("direction", f.direction());
-        }
-        if (f.treatments() != null) {
-            normal.add("l.treatment IN (:treatments)");
-            params.put("treatments", f.treatments());
         }
         if (f.emirate() != null) {
             normal.add("l.emirate = :emirate");
@@ -71,28 +65,54 @@ public class DrillDownService {
         if (f.blocked() != null) {
             normal.add(f.blocked() ? "l.blocked_category IS NOT NULL" : "l.blocked_category IS NULL");
         }
-        where.add("((" + String.join(" AND ", normal) + ") OR (l.line_kind = 'ADJUSTMENT' AND l.adj_box = :box))");
-        String whereSql = String.join(" AND ", where);
+        String normalLines = String.join(" AND ", normal);
 
-        long total = jdbc.sql("SELECT count(*) FROM tax_line l WHERE " + whereSql).params(params).query(Long.class).single();
+        String allNormal = normalLines;
+        if (f.treatments() != null) {
+            allNormal += " AND l.treatment IN (:treatments)";
+            params.put("treatments", f.treatments());
+        }
+        long total = jdbc.sql("SELECT (SELECT count(*) FROM tax_line l WHERE " + allNormal + ") + (SELECT count(*) FROM tax_line l WHERE " + adjustments + ")")
+                .params(params).query(Long.class).single();
         int safeSize = Math.min(Math.max(size, 1), 500);
-        int offset = Math.max(page, 0) * safeSize;
+        long offset = (long) Math.max(page, 0) * safeSize;
+        if (offset >= total) {
+            return new Page(boxCode, List.of(), Math.max(page, 0), safeSize, total);
+        }
+
+        // Each treatment is read on its own, in index order, because an index cannot give the order across an IN list.
+        // Only the lines on the wanted page are then joined to their documents, so a large box costs no more than a small one.
+        List<String> arms = new ArrayList<>();
+        if (f.treatments() == null) {
+            arms.add(normalLines);
+        } else {
+            for (int i = 0; i < f.treatments().size(); i++) {
+                arms.add(normalLines + " AND l.treatment = :treatment" + i);
+                params.put("treatment" + i, f.treatments().get(i));
+            }
+        }
+        arms.add(adjustments);
+        String candidates = arms.stream()
+                .map(where -> "(SELECT l.id, l.tax_year, l.tax_point FROM tax_line l WHERE " + where + " ORDER BY l.tax_point, l.id LIMIT :top)")
+                .reduce((a, b) -> a + " UNION ALL " + b).orElseThrow();
         String columns = java.util.Arrays.stream(TaxLine.COLUMNS.split(","))
                 .map(c -> "l." + c.trim()).reduce((a, b) -> a + ", " + b).orElseThrow();
         List<Row> rows = jdbc.sql("""
+                WITH wanted AS MATERIALIZED (
+                    SELECT id, tax_year, tax_point FROM (%s) candidates ORDER BY tax_point, id LIMIT :limit OFFSET :offset
+                )
                 SELECT %s, d.doc_number, d.doc_date, d.doc_type, d.counterparty_name, d.einvoice_uuid AS doc_uuid,
                        COALESCE(m.invoice_uuid, d.einvoice_uuid) AS einvoice_uuid, m.corner5_status, r.row_no, b.file_name
-                FROM tax_line l
+                FROM wanted
+                JOIN tax_line l ON l.tax_year = wanted.tax_year AND l.id = wanted.id
                 LEFT JOIN source_document d ON d.id = l.document_id
                 LEFT JOIN doc_match dm ON dm.document_id = d.id AND dm.status = 'CONFIRMED'
                 LEFT JOIN einvoice m ON m.invoice_uuid = COALESCE(dm.invoice_uuid, d.einvoice_uuid)
                 LEFT JOIN ingest_row r ON r.id = l.ingest_row_id
                 LEFT JOIN ingest_batch b ON b.id = r.batch_id
-                WHERE %s
                 ORDER BY l.tax_point, l.id
-                LIMIT :limit OFFSET :offset
-                """.formatted(columns, whereSql))
-                .params(params).param("limit", safeSize).param("offset", offset)
+                """.formatted(candidates, columns))
+                .params(params).param("top", offset + safeSize).param("limit", safeSize).param("offset", offset)
                 .query((rs, n) -> new Row(TaxLineRowMapper.INSTANCE.mapRow(rs, n), rs.getString("doc_number"),
                         rs.getObject("doc_date", LocalDate.class), rs.getString("doc_type"), rs.getString("counterparty_name"),
                         rs.getObject("einvoice_uuid", UUID.class), rs.getString("corner5_status"),

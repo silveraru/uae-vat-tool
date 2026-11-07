@@ -2,7 +2,8 @@ import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../api/client";
-import type { Evidence, FilingPosition, Pack } from "../../api/types";
+import type { BankCandidate, Evidence, FilingPosition, Pack, PenaltyEstimate } from "../../api/types";
+import { PenaltyPanel } from "../../components/PenaltyPanel";
 import { Query } from "../../components/Query";
 import { Badge, ErrorAlert, Field, Money, Stat, useAction, useRoles } from "../../components/ui";
 import { usePeriod } from "./PeriodLayout";
@@ -51,11 +52,20 @@ export function FilingTab() {
     });
   }, refresh);
 
+  const penalties = useQuery({ queryKey: ["penalties", periodId], queryFn: () => api.get<PenaltyEstimate>(`/periods/${periodId}/penalties`), enabled: locked });
+  const direct = useQuery({ queryKey: ["direct-submission", periodId], queryFn: () => api.get<{ available: boolean; reason: string | null }>(`/periods/${periodId}/direct-submission`), enabled: locked });
+  const candidates = useQuery({
+    queryKey: ["bank-candidates", periodId],
+    queryFn: () => api.get<BankCandidate[]>(`/periods/${periodId}/bank-candidates`),
+    enabled: state === "FILED" && roles.canFile,
+  });
+  const confirmBank = useAction((bankTxnId: string) => api.post(`/periods/${periodId}/payment/from-bank`, { bankTxnId }), [...refresh, ["bank-candidates", periodId]]);
+
   if (!locked) return <p className="card muted">{t("filing.notLocked")}</p>;
 
   return (
     <>
-      <ErrorAlert error={generate.error ?? file.error ?? record.error} />
+      <ErrorAlert error={generate.error ?? file.error ?? record.error ?? confirmBank.error} />
       <section className="card">
         <h2>{t("filing.pack")}</h2>
         <p className="muted">{t("filing.packExplain")}</p>
@@ -68,6 +78,8 @@ export function FilingTab() {
                 <button type="button" onClick={() => void api.download(`/periods/${periodId}/pack/pdf`, "return-pack.pdf")}>PDF</button>
                 <button type="button" onClick={() => void api.download(`/periods/${periodId}/pack/xlsx`, "return-pack.xlsx")}>Excel</button>
                 <button type="button" onClick={() => void api.download(`/periods/${periodId}/pack/json`, "return-pack.json")}>JSON</button>
+                {p.pdfArKey && <button type="button" onClick={() => void api.download(`/periods/${periodId}/pack/pdf-ar`, "return-pack-ar.pdf")}>{t("filing.pdfArabic")}</button>}
+                {p.xlsxArKey && <button type="button" onClick={() => void api.download(`/periods/${periodId}/pack/xlsx-ar`, "return-pack-ar.xlsx")}>{t("filing.excelArabic")}</button>}
               </div>
             </>
           ) : <p className="muted">{t("filing.noPack")}</p>}
@@ -89,6 +101,7 @@ export function FilingTab() {
               ) : state === "APPROVED" && roles.canFile ? (
                 <form onSubmit={(e) => { e.preventDefault(); file.mutate(undefined); }}>
                   <p className="muted">{t("filing.submitExplain")}</p>
+                  {direct.data && !direct.data.available && <p className="muted"><small>{t("filing.noDirect")}</small></p>}
                   <div className="form-grid">
                     <Field label={t("filing.ref")}><input required dir="ltr" value={filing.submissionRef} onChange={(e) => setFiling({ ...filing, submissionRef: e.target.value })} /></Field>
                     <Field label={t("filing.date")}><input type="date" required value={filing.submittedOn} onChange={(e) => setFiling({ ...filing, submittedOn: e.target.value })} /></Field>
@@ -125,6 +138,29 @@ export function FilingTab() {
                   <button type="submit" className="primary" disabled={record.isPending}>{t("filing.recordPayment")}</button>
                 </form>
               ) : p.payments.length === 0 && <p className="muted">{state === "PAID" ? t("filing.nothingDue") : t("filing.payAfterFiling")}</p>}
+              {candidates.data && candidates.data.length > 0 && (
+                <div className="table-wrap" style={{ marginBlockStart: 12 }}>
+                  <h3>{t("filing.bankCandidates")}</h3>
+                  <p className="muted">{t("filing.bankCandidatesExplain")}</p>
+                  <table>
+                    <thead><tr><th>{t("filing.date")}</th><th className="num">{t("return.amount")}</th><th>{t("filing.bankText")}</th><th>{t("common.actions")}</th></tr></thead>
+                    <tbody>
+                      {candidates.data.map((c) => (
+                        <tr key={c.txn.id}>
+                          <td className="ltr">{c.txn.bookedOn}</td>
+                          <td className="num"><Money value={c.txn.amount} /></td>
+                          <td className="ltr">{c.txn.reference} {c.txn.narrative}</td>
+                          <td><button type="button" disabled={confirmBank.isPending} onClick={() => confirmBank.mutate(c.txn.id)}>{t("filing.useBankLine")}</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+            <section className="card">
+              <h2>{t("penalty.title")}</h2>
+              <Query query={penalties}>{(e) => <PenaltyPanel estimate={e} />}</Query>
             </section>
           </>
         )}
