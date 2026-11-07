@@ -1,5 +1,6 @@
 package ae.vattool.platform.storage;
 
+import ae.vattool.platform.crypto.TenantKeys;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -38,9 +39,11 @@ public class VaultStorage {
     private final S3Client s3;
     private final String bucket;
     private final ObjectLockMode lockMode;
+    private final TenantKeys keys;
     private volatile boolean bucketReady;
 
-    public VaultStorage(@Value("${app.storage.endpoint}") String endpoint,
+    public VaultStorage(TenantKeys keys,
+                        @Value("${app.storage.endpoint}") String endpoint,
                         @Value("${app.storage.region}") String region,
                         @Value("${app.storage.access-key}") String accessKey,
                         @Value("${app.storage.secret-key}") String secretKey,
@@ -52,10 +55,12 @@ public class VaultStorage {
                 .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)))
                 .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
                 .build();
+        this.keys = keys;
         this.bucket = bucket;
         this.lockMode = ObjectLockMode.fromValue(lockMode);
     }
 
+    /** Encrypts with the tenant's key first. The recorded fingerprint is of the plain content, so it still proves what was stored. */
     public Stored put(String key, byte[] content, String contentType, LocalDate retainUntil) {
         ensureBucket();
         var response = s3.putObject(PutObjectRequest.builder()
@@ -65,11 +70,16 @@ public class VaultStorage {
                         .objectLockMode(lockMode)
                         .objectLockRetainUntilDate(retainUntil.atStartOfDay().toInstant(ZoneOffset.UTC))
                         .build(),
-                RequestBody.fromBytes(content));
+                RequestBody.fromBytes(keys.encrypt(content)));
         return new Stored(key, response.versionId(), sha256(content), content.length, retainUntil);
     }
 
     public byte[] get(String key) {
+        return keys.decrypt(getRaw(key));
+    }
+
+    /** The bytes as they sit in storage, which is what someone with only storage access would see. */
+    public byte[] getRaw(String key) {
         ensureBucket();
         return s3.getObjectAsBytes(r -> r.bucket(bucket).key(key)).asByteArray();
     }

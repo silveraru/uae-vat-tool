@@ -1,7 +1,8 @@
 # Rule pack AE-VAT v1. DRAFT: requires tax team sign-off before any return is filed from it.
 # Spec section 4 is the baseline. Items marked CONFIRM are open questions in docs/tax-team-questions.md.
+# 1.1 adds penalties, disclosure, refunds, schemes, the FAF layout and analytics thresholds. No figure in 1.0 changed.
 jurisdiction: AE
-version: "AE-VAT-1.0"
+version: "AE-VAT-1.1"
 effectiveFrom: 2018-01-01
 
 filing:
@@ -52,7 +53,7 @@ classification:
       when: { direction: IN, goodsOrServices: GOODS, counterpartyInUae: false, source: ERP }
       then: { placeOfSupply: UAE, flag: IMPORT_CHECK_CUSTOMS }
     - id: POS-EXPORT-GOODS
-      description: Goods exported from the UAE are zero-rated, subject to evidence (TXC-05, not in the MVP).
+      description: Goods exported from the UAE are zero-rated, subject to evidence (TXC-05, checks T07 and T08).
       when: { direction: OUT, goodsOrServices: GOODS, counterpartyInUae: false }
       then: { treatment: ZERO_RATED, placeOfSupply: OUTSIDE_UAE }
     - id: POS-EXPORT-SERVICES
@@ -81,6 +82,108 @@ classification:
     - { id: BLOCK-ENTERTAINMENT, category: ENTERTAINMENT, direction: IN, patterns: ["\\bentertainment\\b", "\\bhospitality\\b", "\\bclient dinner\\b", "\\bgift vouchers?\\b"] }
     - { id: BLOCK-VEHICLE, category: MOTOR_VEHICLE_PRIVATE, direction: IN, patterns: ["\\bprivate (use )?(car|vehicle)\\b", "\\bpersonal (car|vehicle)\\b"] }
     - { id: BLOCK-EMPLOYEE, category: EMPLOYEE_BENEFIT, direction: IN, patterns: ["\\bstaff (party|gift|gifts)\\b", "\\bemployee (gift|gifts|benefit|benefits)\\b"] }
+
+# Effective-dated: the schedule in force when the violation happened applies. There is no schedule
+# before 14 April 2026 here, so the calculator reports that it cannot estimate rather than guessing.
+# CONFIRM: figures are from secondary sources on Cabinet Decision 129 of 2025 (question 6). Part months
+# count as whole months (question 14).
+penalties:
+  - effectiveFrom: 2026-04-14
+    source: "Cabinet Decision No. 129 of 2025"
+    lateFilingFirstAed: 1000
+    lateFilingRepeatAed: 2000
+    lateFilingRepeatWindowMonths: 24
+    latePaymentAnnualPct: 14
+    incorrectReturnAed: 500
+    disclosureMonthlyPct: 1
+    afterAuditFixedPct: 15
+    afterAuditMonthlyPct: 1
+    capPctOfTax: 200
+
+disclosure:
+  form: "Form 211"
+  # CONFIRM (question 15): sources disagree on whether this deadline still applies.
+  deadlineBusinessDays: 20
+
+refund:
+  form: "VAT311"
+  # Federal Decree-Law 16 and 17 of 2025. CONFIRM (question 16): how the transitional window applies.
+  timeLimitYears: 5
+  transitionalDeadline: 2027-01-01
+
+# Cabinet Decision 149 of 2026 replaces the input-based method with an output-based one.
+# CONFIRM (question 17): sources say both "starting 1 October 2027" and "commencing after" it.
+apportionment:
+  methods:
+    - { method: INPUT_BASED, fromTaxYearStarting: 2018-01-01 }
+    - { method: OUTPUT_BASED, fromTaxYearStarting: 2027-10-01 }
+  roundToWholePct: true
+  # Above this difference in the annual adjustment, sources say further adjustment may be needed.
+  furtherAdjustmentThresholdAed: 250000
+  adjustmentBox: "9"
+
+capitalAssets:
+  thresholdAed: 5000000
+  realEstateYears: 10
+  otherYears: 5
+  adjustmentBox: "9"
+
+# Article 64: VAT accounted for, written off in the accounts, over six months from supply, customer notified.
+badDebt:
+  minMonthsSinceSupply: 6
+
+marginScheme:
+  eligibleCategories: [SECOND_HAND, ANTIQUE, COLLECTIBLE]
+
+zeroRating:
+  exportDays: 90
+
+registration:
+  mandatoryAed: 375000
+  voluntaryAed: 187500
+  rollingMonths: 12
+  approachingPct: 80
+
+analytics:
+  newSupplierNetAed: 100000
+  zeroRatedGrowthMultiple: 1.5
+  zeroRatedMinAed: 50000
+  trailingPeriods: 3
+
+# Advisory only (TXC-06, NFR-15): a person confirms every change. These words are a starting list.
+suggestions:
+  engineVersion: "rule-suggest-1.0"
+  historyMinLines: 3
+  keywords:
+    - { pattern: "\\bresidential\\b", treatment: EXEMPT, confidence: 0.6, reason: "Residential property is usually exempt" }
+    - { pattern: "\\bbare land\\b", treatment: EXEMPT, confidence: 0.6, reason: "Bare land is usually exempt" }
+    - { pattern: "\\b(metro|bus|taxi) (fare|ticket)s?\\b", treatment: EXEMPT, confidence: 0.5, reason: "Local passenger transport is usually exempt" }
+    - { pattern: "\\bexports?\\b", treatment: ZERO_RATED, confidence: 0.5, reason: "Exports are usually zero-rated, subject to evidence" }
+    - { pattern: "\\binternational (freight|transport|shipping)\\b", treatment: ZERO_RATED, confidence: 0.5, reason: "International transport is usually zero-rated" }
+
+# Layout from the FTA's Requirements Document for Tax Accounting Software (October 2017), Appendix 5.
+# CONFIRM (question 18): that document defines the tables but no section markers. The markers below are
+# what files from other software are understood to use. Remove them here if the FTA says otherwise.
+faf:
+  version: "FAFv1.0.0"
+  dateFormat: "dd-MM-yyyy"
+  markers:
+    company: [CompInfoStart, CompInfoEnd]
+    purchases: [PurcDataStart, PurcDataEnd]
+    supplies: [SuppDataStart, SuppDataEnd]
+    ledger: [GLDataStart, GLDataEnd]
+  taxCodes:
+    STANDARD: SR
+    ZERO_RATED: ZR
+    EXEMPT: EX
+    REVERSE_CHARGE: RC
+    DRC: RC
+    IMPORT: RC
+    IMPORT_ADJUSTMENT: RC
+    OUT_OF_SCOPE: OS
+    TOURIST_REFUND: SR
+  outputAmendmentCode: OA
+  inputAmendmentCode: IA
 
 form:
   code: VAT201

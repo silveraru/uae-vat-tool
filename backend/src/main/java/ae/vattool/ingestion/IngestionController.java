@@ -34,9 +34,13 @@ public class IngestionController {
     private final EinvoiceStore einvoices;
     private final AccessControl access;
     private final String backfillUrl;
+    private final UblImportService ubl;
+    private final FxFeedService fxFeed;
 
-    public IngestionController(IngestionService ingestion, EinvoiceStore einvoices, AccessControl access,
+    public IngestionController(IngestionService ingestion, EinvoiceStore einvoices, AccessControl access, UblImportService ubl, FxFeedService fxFeed,
                                @Value("${app.asp.backfill-url}") String backfillUrl) {
+        this.ubl = ubl;
+        this.fxFeed = fxFeed;
         this.ingestion = ingestion;
         this.einvoices = einvoices;
         this.access = access;
@@ -59,6 +63,30 @@ public class IngestionController {
                                             @RequestParam(defaultValue = Templates.CURRENT_VERSION) String templateVersion) {
         access.require(id, Permission.EDIT_DATA);
         return ingestion.loadRows(id, Templates.parseKind(kind), templateVersion, rows);
+    }
+
+    @PostMapping(path = "/entities/{id}/einvoices/ubl", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public IngestionService.LoadResult uploadUbl(@PathVariable UUID id, @RequestPart("file") MultipartFile file) throws IOException {
+        access.require(id, Permission.EDIT_DATA);
+        return ubl.load(id, "UPLOAD", file.getOriginalFilename(), file.getBytes());
+    }
+
+    @PostMapping(path = "/entities/{id}/einvoices/ubl", consumes = {MediaType.APPLICATION_XML_VALUE, MediaType.TEXT_XML_VALUE})
+    public IngestionService.LoadResult postUbl(@PathVariable UUID id, @RequestBody byte[] xml) {
+        access.require(id, Permission.EDIT_DATA);
+        return ubl.load(id, "API", "api-" + ae.vattool.platform.storage.VaultStorage.sha256(xml).substring(0, 12) + ".xml", xml);
+    }
+
+    @PostMapping("/entities/{id}/einvoices/corner5-status")
+    public UblImportService.StatusResult corner5(@PathVariable UUID id, @RequestBody List<UblImportService.StatusInput> statuses) {
+        access.require(id, Permission.EDIT_DATA);
+        return ubl.applyStatuses(id, statuses);
+    }
+
+    @PostMapping("/fx/feed/pull")
+    public FxFeedService.Pulled pullFx() {
+        access.requireTenantWide(Permission.ADMINISTER);
+        return fxFeed.pullConfigured();
     }
 
     @GetMapping("/entities/{id}/ingest/batches")

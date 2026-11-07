@@ -17,7 +17,7 @@ export function usePeriod() {
   return useOutletContext<PeriodContext>();
 }
 
-const TABS = ["", "data", "exceptions", "lines", "adjustments", "review", "filing", "evidence", "corrections"];
+const TABS = ["", "data", "exceptions", "lines", "suggestions", "adjustments", "schemes", "exports", "review", "filing", "refund", "evidence", "corrections"];
 
 export function PeriodLayout() {
   const { id = "" } = useParams();

@@ -2,8 +2,8 @@
 
 Turns e-invoice data and ERP transactions into a reconciled, approved VAT201 return with a defensible
 audit trail. A tax agent then submits the return on EmaraTax: the tool prepares and assists, and does
-not file. This is the MVP from the requirements document: all 35 Must requirements, running locally
-on synthetic data.
+not file. All 58 requirements in the requirements document have code behind them, running locally on
+synthetic data.
 
 **This is not production-ready.** See [What is not done](#what-is-not-done). In particular, the tax rules
 are an unsigned draft, and every return pack is watermarked `DRAFT RULE PACK: NOT FOR FILING` until
@@ -37,6 +37,7 @@ The five golden entities load on first start in the dev profile, so there is dat
 | Keycloak admin (admin / admin) | <http://localhost:18180> |
 | Alert emails (Mailpit) | <http://localhost:18125> |
 | Object storage console (vatminio / vatminio-secret) | <http://localhost:19101> |
+| Traces (Jaeger) | <http://localhost:16686> |
 
 Ports are chosen to avoid others in use on the development machine, and the Compose project is
 named `uaevat`, so it does not touch other projects' containers.
@@ -84,23 +85,29 @@ front end talking to it over REST. ArchUnit keeps the modules free of cycles so 
 
 ```
 backend/src/main/java/ae/vattool/
-  platform        tenancy, security, audit chain, WORM storage
+  platform        tenancy, security, audit chain, WORM storage, per-tenant keys, generated documents
   rules           rule pack store, classifier
   masterdata      entities, establishments, calendar, mapping, parties
   ledger          the canonical tax ledger, and the only way to write to it
-  ingestion       templates, row processing, e-invoice bridge, SFTP
+  ingestion       templates, row processing, e-invoice bridge, UBL import, ERP connectors, FX feed, SFTP
   returns         VAT201 engine, versions, drill-down
   reconciliation  checks R01 to R14 plus data and tax checks, matching, exceptions, certificate
   workflow        maker-checker, sign-offs, comments, deadline alerts
   evidence        evidence vault
-  adjustments     six-month rule, journals, corrections after filing
-  filing          return pack, filing and payment
-  portfolio       firm-wide dashboard and deadlines
+  adjustments     six-month rule, journals, apportionment, bad debt, capital assets, corrections
+  corrections     Form 211, penalty exposure, refund claims
+  auditcase       FTA Audit File, audit cases and bundles
+  banking         MT940 and CAMT.053 statements, and matching supplier invoices
+  classification  suggestions, export evidence
+  filing          return pack, filing and payment, bank payment matching
+  analytics       trends, anomaly flags, registration threshold
+  practice        staff assignment and workload, webhooks
+  portfolio       firm-wide dashboard, deadlines, retention report
 rulepacks/        tax rules and the VAT201 form, as data
 contracts/        proposed event contract with the ASP platform
 asp-simulator/    stands in for the ASP platform
 fixtures/golden/  five synthetic entities with hand-worked expected returns
-docs/             status against the requirements, tax team questions, load test results
+docs/             status against the requirements, tax team questions, load test results, production readiness
 ```
 
 ### The rules that matter when changing this code
@@ -123,17 +130,21 @@ docs/             status against the requirements, tax team questions, load test
 
 Needed before real use, and not code that could be written here:
 
-- Tax team sign-off on rule pack AE-VAT v1 and the golden returns: [docs/tax-team-questions.md](docs/tax-team-questions.md)
-- Answers from the FTA: VAT201 API or pre-populated returns, TRN check digit and verification, FAF specification
-- Connecting the real ASP platform, after its team reviews the event contract
+- Tax team sign-off on rule pack AE-VAT 1.1 and the golden returns: [docs/tax-team-questions.md](docs/tax-team-questions.md)
+- Answers from the FTA: VAT201 API or pre-populated returns, TRN check digit and verification, any newer FAF specification
+- Connecting the real ASP platform, after its team reviews the event contract, and first contact with live ERPs and real bank files
 - The exit gate: 5 pilot clients reconciling to their manually prepared returns
-- UAE hosting, KMS or HSM with per-tenant keys, the availability targets, backups, and ISO 27001 and SOC 2
+- UAE hosting, a production key service, the availability targets, backups, and ISO 27001 and SOC 2: the decisions are in [docs/production-readiness.md](docs/production-readiness.md)
 - A native Arabic review of the draft translations, especially tax terms
 - A manual accessibility audit: the automated checks catch only part of WCAG 2.1 AA
 
-Known limits in the MVP are listed per requirement in [docs/requirements-status.md](docs/requirements-status.md).
-The ones most likely to matter: partially exempt clients need manual recovery rates and review, server
-messages and the PDF pack are English only, and uploads are read into memory.
+Known limits are listed per requirement in [docs/requirements-status.md](docs/requirements-status.md). The ones
+most likely to matter: the ERP connector mappings have never met a live system, and uploads and the FAF are
+held in memory, so very large files need the streaming work first.
 
-For production, set `app.storage.lock-mode` to `COMPLIANCE`, replace the demo realm and its users, and
-leave `app.seed` off. New Keycloak users must enrol TOTP, but the seeded demo users are exempt.
+For production: run with the `prod` profile and set `app.crypto.kms` to a real key service, which that profile
+enforces. Set `app.storage.lock-mode` to `COMPLIANCE`, replace the demo realm and its users, and leave `app.seed`
+off. New Keycloak users must enrol TOTP, but the seeded demo users are exempt.
+
+A database from before rule pack 1.1 keeps its older pack until an admin installs the new one on the Rule packs
+page. It installs as a draft, so any sign-off must be given again.

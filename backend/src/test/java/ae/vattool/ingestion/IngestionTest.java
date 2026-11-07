@@ -342,7 +342,7 @@ class IngestionTest extends IntegrationTest {
         JsonNode r = client.upload(entity, "AR", "a.csv", file);
 
         String key = r.get("batch").get("storageKey").asString();
-        assertThat(vault.get(key)).isEqualTo(file);
+        assertThat(world.queryInTenant(tenant, () -> vault.get(key))).isEqualTo(file);
         assertThat(vault.retention(key).mode()).isEqualTo("GOVERNANCE");
         assertThat(key).startsWith("t/" + tenant + "/");
     }

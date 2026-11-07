@@ -39,6 +39,8 @@ public class WorkflowController {
 
     public record Note(String note) {}
 
+    public record ApprovalInput(String note, WorkflowService.SignatureInput signature) {}
+
     public record Reason(String reason) {}
 
     public record CommentInput(String objectType, String objectId, UUID parentId, String body) {}
@@ -71,10 +73,10 @@ public class WorkflowController {
     }
 
     @PostMapping("/periods/{id}/approve")
-    public WorkflowService.Status approve(@PathVariable UUID id, @RequestBody(required = false) Note in) {
+    public WorkflowService.Status approve(@PathVariable UUID id, @RequestBody(required = false) ApprovalInput in, jakarta.servlet.http.HttpServletRequest request) {
         access.require(calendar.get(id).entityId(), Permission.APPROVE_AND_LOCK);
         workflow.refresh(id);
-        return workflow.approve(id, in == null ? null : in.note());
+        return workflow.approve(id, in == null ? null : in.note(), in == null ? null : in.signature(), request.getRemoteAddr(), request.getHeader("User-Agent"));
     }
 
     @PostMapping("/periods/{id}/send-back")

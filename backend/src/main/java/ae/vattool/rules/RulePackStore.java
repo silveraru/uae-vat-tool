@@ -40,6 +40,8 @@ public class RulePackStore {
 
     public record ActivePack(StoredPack meta, RulePackDefinition definition) {}
 
+    public record Bundled(String version, boolean installed) {}
+
     private final JdbcClient jdbc;
     private final AuditLog audit;
     private final Map<String, RulePackDefinition> parsedByHash = new ConcurrentHashMap<>();
@@ -91,6 +93,24 @@ public class RulePackStore {
     public StoredPack upload(String yaml) {
         RulePackDefinition def = RulePackParser.parse(yaml);
         return insert(def, yaml);
+    }
+
+    /** What ships with the product, and whether this tenant has it yet. */
+    @Transactional(readOnly = true)
+    public Bundled bundled() {
+        RulePackDefinition def = RulePackParser.parse(readBundled());
+        boolean installed = jdbc.sql("SELECT EXISTS (SELECT 1 FROM rule_pack WHERE jurisdiction = ? AND version = ?)").params(def.jurisdiction(), def.version()).query(Boolean.class).single();
+        return new Bundled(def.version(), installed);
+    }
+
+    /**
+     * Installs a newer bundled pack on a person's say-so, as a draft. It takes effect at once, and it
+     * does not inherit any sign-off, so the watermark returns until the tax team signs the new version.
+     */
+    @Transactional
+    public StoredPack installBundled() {
+        String yaml = readBundled();
+        return insert(RulePackParser.parse(yaml), yaml);
     }
 
     @Transactional

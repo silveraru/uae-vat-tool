@@ -11,7 +11,7 @@ public final class Templates {
 
     public static final String CURRENT_VERSION = "v1";
 
-    public enum Kind { AR, AP, VAT_SUBLEDGER, GL, CUSTOMS, FX, OPENING_AP }
+    public enum Kind { AR, AP, VAT_SUBLEDGER, GL, CUSTOMS, FX, OPENING_AP, GL_JOURNAL, MARGIN, OPENING_ASSETS, OPENING_APPORTIONMENT, UBL }
 
     private static final List<String> TX_REQUIRED = List.of(
             "doc_type", "doc_number", "doc_date", "net_amount", "vat_amount");
@@ -23,18 +23,29 @@ public final class Templates {
 
     private record Spec(List<String> required, List<String> optional) {}
 
-    private static final Map<Kind, Spec> V1 = Map.of(
-            Kind.AR, new Spec(TX_REQUIRED, TX_OPTIONAL),
-            Kind.AP, new Spec(TX_REQUIRED, TX_OPTIONAL),
-            Kind.VAT_SUBLEDGER, new Spec(concat(List.of("direction"), TX_REQUIRED), TX_OPTIONAL),
-            Kind.GL, new Spec(List.of("account_code", "account_type", "period_end", "balance_aed"), List.of()),
-            Kind.CUSTOMS, new Spec(
+    private static final Map<Kind, Spec> V1 = Map.ofEntries(
+            Map.entry(Kind.AR, new Spec(TX_REQUIRED, TX_OPTIONAL)),
+            Map.entry(Kind.AP, new Spec(TX_REQUIRED, TX_OPTIONAL)),
+            Map.entry(Kind.VAT_SUBLEDGER, new Spec(concat(List.of("direction"), TX_REQUIRED), TX_OPTIONAL)),
+            Map.entry(Kind.GL, new Spec(List.of("account_code", "account_type", "period_end", "balance_aed"), List.of())),
+            Map.entry(Kind.CUSTOMS, new Spec(
                     List.of("doc_type", "declaration_number", "declaration_date", "customs_value_aed", "vat_aed"),
-                    List.of("line_no", "establishment_code", "supplier_name", "supplier_country", "description", "recovery_pct", "void")),
-            Kind.FX, new Spec(List.of("currency", "rate_date", "aed_per_unit"), List.of("source")),
-            Kind.OPENING_AP, new Spec(
+                    List.of("line_no", "establishment_code", "supplier_name", "supplier_country", "description", "recovery_pct", "void"))),
+            Map.entry(Kind.FX, new Spec(List.of("currency", "rate_date", "aed_per_unit"), List.of("source"))),
+            Map.entry(Kind.OPENING_AP, new Spec(
                     List.of("doc_number", "doc_date", "agreed_payment_date", "gross_aed", "recoverable_vat_aed"),
-                    List.of("counterparty_trn", "counterparty_name", "paid_amount_aed", "paid_date")));
+                    List.of("counterparty_trn", "counterparty_name", "paid_amount_aed", "paid_date"))),
+            Map.entry(Kind.GL_JOURNAL, new Spec(
+                    List.of("transaction_date", "account_id", "transaction_id", "debit", "credit"),
+                    List.of("line_no", "account_name", "description", "name", "source_document_id", "source_type", "balance"))),
+            Map.entry(Kind.MARGIN, new Spec(
+                    List.of("doc_number", "doc_date", "category", "purchase_price_aed", "selling_price_aed"),
+                    List.of("acquisition_costs_aed", "establishment_code", "counterparty_name", "counterparty_trn", "description", "void"))),
+            Map.entry(Kind.OPENING_ASSETS, new Spec(
+                    List.of("reference", "description", "category", "cost_aed", "input_vat_aed", "initial_recovery_pct", "first_used_on"), List.of())),
+            Map.entry(Kind.OPENING_APPORTIONMENT, new Spec(
+                    List.of("tax_year_start", "direct_recoverable_aed", "direct_exempt_aed", "taxable_supplies_aed", "total_supplies_aed", "residual_input_aed", "recovered_aed"),
+                    List.of())));
 
     private Templates() {}
 
@@ -54,7 +65,12 @@ public final class Templates {
         if (!CURRENT_VERSION.equals(version)) {
             throw DomainException.invalid("TEMPLATE_VERSION_UNKNOWN", "Unknown template version: " + version);
         }
-        return V1.get(kind);
+        Spec spec = V1.get(kind);
+        if (spec == null) {
+            // UBL arrives through its own route, as XML rather than a template.
+            throw DomainException.invalid("KIND_INVALID", "There is no upload template for " + kind);
+        }
+        return spec;
     }
 
     /** Refuses a file with missing columns outright, and any unknown column, since it may be a typo. */

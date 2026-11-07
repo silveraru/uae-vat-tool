@@ -175,13 +175,18 @@ public class Ledger {
                     source_system, direction, goods_or_services, gl_account, tax_code, description, counterparty_trn,
                     counterparty_country, tax_point, currency, fx_rate, net_doc, vat_doc, net_aed, vat_aed, recoverable_vat_aed,
                     recovery_pct, treatment, blocked_category, drc_category, place_of_supply, memo, review_flags, classified_by,
-                    confidence, rule_ids, rule_pack_version, mapping_version_id, change_reason_code, change_reason, changed_by, tax_hash)
+                    confidence, rule_ids, rule_pack_version, mapping_version_id, change_reason_code, change_reason, changed_by, tax_hash, input_attribution)
                 SELECT :id, tenant_id, tax_year, logical_line_id, revision + 1, filer_entity_id, member_entity_id,
                     establishment_id, emirate, period_id, document_id, ingest_row_id, line_no, line_kind, adj_box, adjustment_id,
                     source_system, direction, goods_or_services, gl_account, tax_code, description, counterparty_trn,
                     counterparty_country, tax_point, currency, fx_rate, net_doc, vat_doc, net_aed, :vat, :recoverable,
                     :pct, :treatment, :blocked, drc_category, place_of_supply, :memo, '{}', 'USER',
-                    1, rule_ids, :packVersion, mapping_version_id, :reasonCode, :reason, :by, tax_hash
+                    1, rule_ids, :packVersion, mapping_version_id, :reasonCode, :reason, :by, tax_hash,
+                    CASE WHEN CAST(:explicitPct AS numeric) IS NULL THEN input_attribution
+                         WHEN direction <> 'IN' THEN input_attribution
+                         WHEN CAST(:explicitPct AS numeric) = 100 THEN 'TAXABLE'
+                         WHEN CAST(:explicitPct AS numeric) = 0 THEN 'EXEMPT'
+                         ELSE 'RESIDUAL' END
                 FROM tax_line WHERE tenant_id = :tenant AND tax_year = :year AND id = :oldId
                 """)
                 .param("id", id).param("vat", vat).param("recoverable", recoverable).param("pct", pct)
@@ -189,6 +194,7 @@ public class Ledger {
                 .param("packVersion", pack.meta().version()).param("reasonCode", reasonCode).param("reason", reason)
                 .param("by", RequestContext.requireActor().actorId())
                 .param("tenant", RequestContext.requireTenant()).param("year", taxYear).param("oldId", line.id())
+                .param("explicitPct", recoveryPct)
                 .update();
         requestRecompute(line.periodId());
         return id;
@@ -330,12 +336,12 @@ public class Ledger {
                     goods_or_services, gl_account, tax_code, description, counterparty_trn, counterparty_country, tax_point,
                     currency, fx_rate, net_doc, vat_doc, net_aed, vat_aed, recoverable_vat_aed, recovery_pct, treatment,
                     blocked_category, drc_category, place_of_supply, memo, review_flags, classified_by, confidence, rule_ids,
-                    rule_pack_version, mapping_version_id, changed_by, tax_hash)
+                    rule_pack_version, mapping_version_id, changed_by, tax_hash, input_attribution)
                 VALUES (:id, :tenant, :year, :logical, :revision, :filer, :member, :establishment, :emirate, :period, :document,
                     :row, :lineNo, 'NORMAL', :source, :direction, :gos, :gl, :taxCode, :description, :trn, :country, :taxPoint,
                     :currency, :fx, :netDoc, :vatDoc, :net, :vat, :recoverable, :pct, :treatment, :blocked, :drc, :pos, :memo,
                     string_to_array(:flags, '|'), :by, :confidence, string_to_array(:rules, '|'), :version, :mapping,
-                    :actor, :hash)
+                    :actor, :hash, :attribution)
                 """)
                 .param("id", id).param("tenant", RequestContext.requireTenant()).param("year", in.taxPoint().getYear())
                 .param("logical", logicalId).param("revision", revision).param("filer", in.filerEntityId())
@@ -354,7 +360,26 @@ public class Ledger {
                 .param("rules", String.join("|", o.ruleIds())).param("version", packVersion)
                 .param("mapping", c.mappingVersionId())
                 .param("actor", RequestContext.requireActor().actorId()).param("hash", taxHash)
+                .param("attribution", attribution(in.direction(), in.recoveryPct()))
                 .update();
+    }
+
+    /**
+     * Input tax either belongs directly to taxable or exempt supplies, or is residual. A file marks a
+     * direct line with a recovery rate of 100 or 0, and leaving the rate blank means residual, which
+     * is what apportionment works on.
+     */
+    static String attribution(String direction, BigDecimal explicitPct) {
+        if (!"IN".equals(direction)) {
+            return null;
+        }
+        if (explicitPct != null && explicitPct.compareTo(BigDecimal.valueOf(100)) == 0) {
+            return "TAXABLE";
+        }
+        if (explicitPct != null && explicitPct.signum() == 0) {
+            return "EXEMPT";
+        }
+        return "RESIDUAL";
     }
 
     /** The content that matters for tax. Payment fields are not in it, so a payment update adds no revision. */

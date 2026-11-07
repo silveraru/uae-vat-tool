@@ -1,0 +1,20 @@
+# Starter mapping from Dynamics 365 Finance OData entity names. Not run against a live environment.
+system: DYNAMICS_365
+label: Microsoft Dynamics 365 Finance
+status: UNVERIFIED
+transport: REST
+note: Entity and field names vary with the version and customisation. Check them against your environment.
+kinds:
+  AR:
+    path: /data/SalesInvoiceHeadersV2
+    params: { "$filter": "InvoiceDate ge {from}T00:00:00Z and InvoiceDate le {to}T23:59:59Z" }
+    itemsPath: value
+    paging: { param: "$skip", start: 0, sizeParam: "$top", size: 500, style: OFFSET }
+    constants: { doc_type: TAX_INVOICE }
+    fields:
+      doc_number: InvoiceNumber
+      doc_date: InvoiceDate
+      net_amount: TotalChargeAmount
+      vat_amount: TotalTaxAmount
+      currency: CurrencyCode
+      counterparty_name: InvoiceCustomerAccountNumber

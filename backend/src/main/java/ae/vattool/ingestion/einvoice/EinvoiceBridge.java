@@ -54,7 +54,9 @@ public class EinvoiceBridge {
         }
         EinvoiceStore.Applied result = RequestContext.asSystem(event.tenantId(), "einvoice-bridge", () -> store.apply(event));
         metrics.counter("vat.einvoice.events", "result", result.name().toLowerCase()).increment();
-        metrics.timer("vat.einvoice.lag").record(java.time.Duration.between(event.occurredAt().toInstant(), java.time.Instant.now()));
+        // A sender's clock running ahead must not turn the lag negative, which a timer rejects.
+        java.time.Duration lag = java.time.Duration.between(event.occurredAt().toInstant(), java.time.Instant.now());
+        metrics.timer("vat.einvoice.lag").record(lag.isNegative() ? java.time.Duration.ZERO : lag);
         if (result == EinvoiceStore.Applied.UNKNOWN_ENTITY) {
             log.warn("E-invoice event {} refers to a TRN not onboarded in tenant {}", event.eventId(), event.tenantId());
         }

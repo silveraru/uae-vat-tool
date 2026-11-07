@@ -9,6 +9,8 @@ const STATE_TONE: Record<string, string> = {
   OPEN: "", IN_REVIEW: "warn", APPROVED: "ok", FILED: "ok", PAID: "ok", AMENDED: "warn", ASSIGNED: "warn", RESOLVED: "ok", WAIVED: "warn",
   BLOCKING: "bad", WARNING: "warn", LOCKED: "ok", DRAFT: "", CORRECTED: "warn", MATCHED: "ok", MISMATCHED: "bad", UNCONFIRMED: "warn",
   PROPOSED: "warn", REJECTED: "bad", SIGNED_OFF: "ok", PROCESSED: "ok", OVERDUE: "bad", "T-2": "bad", "T-5": "warn", "T-10": "warn",
+  SUBMITTED: "warn", SETTLED: "ok", RECEIVED: "ok", ACCEPTED: "ok", STALE: "", COMPLETE: "ok", INCOMPLETE: "warn", LATE: "bad", CLOSED: "ok", RESPONDED: "ok",
+  DELIVERED: "ok", FAILED: "bad", PENDING: "warn", OK: "ok", MUST_REGISTER: "bad", APPROACHING: "warn", MAY_REGISTER: "warn", BELOW: "", UNVERIFIED: "warn",
 };
 
 /** A status badge. The text carries the meaning, so colour is never the only signal. */
@@ -35,10 +37,22 @@ export function Field({ label, children, hint }: { label: string; children: Reac
   );
 }
 
+/**
+ * The server words its errors in English and gives each a stable code. In Arabic the code picks the
+ * translated message, and the server's own text stays beside it, since it names the specific figures.
+ */
+export function ErrorText({ error }: { error: unknown }) {
+  const { t, i18n } = useTranslation();
+  const message = error instanceof Error ? error.message : String(error);
+  if (i18n.language === "ar" && error instanceof ApiError && i18n.exists(`errors.${error.code}`)) {
+    return <>{t(`errors.${error.code}`)} <small className="ltr">{message}</small></>;
+  }
+  return <>{message}</>;
+}
+
 export function ErrorAlert({ error }: { error: unknown }) {
   if (!error) return null;
-  const message = error instanceof ApiError || error instanceof Error ? error.message : String(error);
-  return <div className="alert bad" role="alert">{message}</div>;
+  return <div className="alert bad" role="alert"><ErrorText error={error} /></div>;
 }
 
 export function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: string }) {
@@ -110,6 +124,9 @@ export function useRoles(entityId?: string) {
     canAdjust: roles.has("PREPARER") || roles.has("TAX_REVIEWER"),
     canDecide: roles.has("TAX_REVIEWER") || roles.has("APPROVER"),
     canWaive: roles.has("TAX_REVIEWER") || roles.has("APPROVER") || roles.has("ENGAGEMENT_PARTNER"),
+    canAudit: roles.has("TAX_REVIEWER") || roles.has("ENGAGEMENT_PARTNER") || roles.has("FIRM_ADMIN"),
+    canManagePractice: roles.has("ENGAGEMENT_PARTNER") || roles.has("FIRM_ADMIN"),
+    canCloseAudit: roles.has("ENGAGEMENT_PARTNER") || roles.has("FIRM_ADMIN"),
   };
 }
 

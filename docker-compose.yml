@@ -5,6 +5,8 @@ name: uaevat
 services:
   postgres:
     image: postgres:16
+    # Parallel queries and VACUUM need more than Docker's default 64 MB of shared memory on large tables.
+    shm_size: 1g
     environment:
       POSTGRES_DB: uaevat
       POSTGRES_USER: vat_super
@@ -62,6 +64,13 @@ services:
   mailpit:
     image: axllent/mailpit:v1.27.0
     ports: ["18125:8025", "11025:1025"]
+
+  # Receives traces from the backend in development (NFR-14). Production points at its own collector.
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports: ["16686:16686", "14318:4318"]
 
   # Clients drop ERP files here. The backend polls the same directory.
   sftp:

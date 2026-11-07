@@ -87,6 +87,14 @@ public class IngestionService {
                 () -> storage.put(key, raw, "application/json", LocalDate.now().plusYears(RAW_RETENTION_YEARS)).key());
     }
 
+    /** UBL files are parsed elsewhere, then follow the same path: same batch, row records and idempotency. */
+    LoadResult loadParsed(UUID filerId, Kind kind, String channel, String fileName, byte[] raw, String contentType, List<Map<String, String>> parsedRows) {
+        String hash = VaultStorage.sha256(raw);
+        String key = "t/" + RequestContext.requireTenant() + "/raw/" + filerId + "/" + kind + "/" + hash + "/" + sanitise(fileName);
+        return load(filerId, kind, Templates.CURRENT_VERSION, channel, fileName, hash, parsedRows,
+                () -> storage.put(key, raw, contentType, LocalDate.now().plusYears(RAW_RETENTION_YEARS)).key());
+    }
+
     private LoadResult load(UUID filerId, Kind kind, String version, String channel, String fileName, String hash,
                             List<Map<String, String>> parsedRows, java.util.function.Supplier<String> storeRaw) {
         LegalEntity filer = requireFiler(filerId);
@@ -112,7 +120,7 @@ public class IngestionService {
         metrics.counter("vat.ingest.rows", "tenant", tenant, "result", "rejected").increment(counts.rejected);
         metrics.counter("vat.ingest.rows", "tenant", tenant, "result", "held").increment(counts.held);
         if (kind == Kind.FX) {
-            rows.reprocessHeld(filer);
+            rows.reprocessHeld();
         }
         return new LoadResult(done, false);
     }

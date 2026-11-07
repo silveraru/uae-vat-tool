@@ -1,0 +1,20 @@
+# Starter mapping from Oracle's public Fusion REST names. Not run against a live Fusion instance.
+system: ORACLE_FUSION
+label: Oracle Fusion Cloud
+status: UNVERIFIED
+transport: REST
+note: Field names follow the Fusion Financials REST resources. Check them against your release, because resource versions change.
+kinds:
+  AP:
+    path: /fscmRestApi/resources/11.13.18.05/invoices
+    params: { q: "InvoiceDate >= '{from}' and InvoiceDate <= '{to}'" }
+    itemsPath: items
+    paging: { param: offset, start: 0, sizeParam: limit, size: 500, style: OFFSET }
+    constants: { doc_type: TAX_INVOICE, has_tax_invoice: "true" }
+    fields:
+      doc_number: InvoiceNumber
+      doc_date: InvoiceDate
+      net_amount: InvoiceAmount
+      vat_amount: TotalTaxAmount
+      currency: InvoiceCurrency
+      counterparty_name: Supplier

@@ -68,6 +68,10 @@ class ReconChecks {
         all.addAll(d03(c));
         all.addAll(d04(c));
         all.addAll(lineFlags(c));
+        all.addAll(t07(c));
+        all.addAll(t08(c));
+        all.addAll(t09(c));
+        all.addAll(t10(c));
         return all;
     }
 
@@ -496,6 +500,94 @@ class ReconChecks {
             "DRC_SELLER_BOX_UNCONFIRMED", "T05",
             "IMPORT_CHECK_CUSTOMS", "T06",
             "DZ_GOODS_TO_MAINLAND", "T06");
+
+    /** Exports are what a zero rate rests on, so a goods export is expected to have evidence of both kinds. */
+    private List<Finding> t07(Context c) {
+        record Row(UUID id, String docNumber, BigDecimal net, UUID officialEvidenceId, UUID commercialEvidenceId) {}
+        return jdbc.sql("""
+                SELECT d.id, d.doc_number, SUM(l.net_aed) AS net, x.official_evidence_id, x.commercial_evidence_id
+                FROM source_document d
+                JOIN tax_line l ON l.document_id = d.id AND l.period_id = :period AND l.superseded_at IS NULL
+                LEFT JOIN export_evidence x ON x.document_id = d.id
+                WHERE d.direction = 'OUT' AND l.treatment = 'ZERO_RATED' AND l.goods_or_services = 'GOODS' AND COALESCE(l.counterparty_country, 'AE') <> 'AE'
+                  AND (x.official_evidence_id IS NULL OR x.commercial_evidence_id IS NULL)
+                GROUP BY d.id, x.official_evidence_id, x.commercial_evidence_id
+                """).param("period", c.period().id()).query(Row.class).list().stream()
+                .map(r -> finding("T07", r.id().toString(), "Export " + r.docNumber() + " has no " + (r.officialEvidenceId() == null && r.commercialEvidenceId() == null ? "official or commercial"
+                                : r.officialEvidenceId() == null ? "official" : "commercial") + " evidence on file", BigDecimal.ZERO,
+                        "docNumber", r.docNumber(), "net", r.net().toPlainString()))
+                .toList();
+    }
+
+    /**
+     * Raised on the earliest open period, since the sale itself may already be filed. The zero rate has
+     * lost its footing until there is evidence or an extension, and tax may be due.
+     */
+    private List<Finding> t08(Context c) {
+        if (!c.earliestOpen() || c.pack().zeroRating() == null) {
+            return List.of();
+        }
+        record Row(UUID id, String docNumber, LocalDate docDate, BigDecimal net, LocalDate exportedOn, LocalDate extendedUntil) {}
+        int days = c.pack().zeroRating().exportDays();
+        return jdbc.sql("""
+                SELECT d.id, d.doc_number, d.doc_date, SUM(l.net_aed) AS net, x.exported_on, x.extended_until
+                FROM source_document d
+                JOIN tax_line l ON l.document_id = d.id AND l.superseded_at IS NULL
+                LEFT JOIN export_evidence x ON x.document_id = d.id
+                WHERE d.filer_entity_id = :filer AND d.direction = 'OUT' AND l.treatment = 'ZERO_RATED' AND l.goods_or_services = 'GOODS' AND COALESCE(l.counterparty_country, 'AE') <> 'AE'
+                  AND d.voided_at IS NULL AND d.doc_type <> 'CREDIT_NOTE' AND d.doc_date + CAST(:days AS integer) < :end
+                GROUP BY d.id, x.exported_on, x.extended_until
+                """).param("filer", c.entity().id()).param("days", days).param("end", c.period().periodEnd()).query(Row.class).list().stream()
+                .filter(r -> {
+                    LocalDate limit = r.extendedUntil() != null ? r.extendedUntil() : r.docDate().plusDays(days);
+                    return r.exportedOn() == null ? limit.isBefore(c.period().periodEnd()) : r.exportedOn().isAfter(limit);
+                })
+                .map(r -> finding("T08", r.id().toString(), "Export " + r.docNumber() + " of " + r.docDate() + (r.exportedOn() == null
+                                ? " has no export date, and the " + days + " days have passed" : " left the UAE on " + r.exportedOn() + ", after the time limit"),
+                        r.net().multiply(c.pack().rates().standardPct()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP),
+                        "docNumber", r.docNumber(), "docDate", r.docDate().toString(), "exportedOn", String.valueOf(r.exportedOn())))
+                .toList();
+    }
+
+    /** A partly exempt business should not recover all its residual input tax, and nothing else would catch that. */
+    private List<Finding> t09(Context c) {
+        BigDecimal exempt = c.box("5.amount");
+        if (exempt.signum() == 0) {
+            return List.of();
+        }
+        record Row(BigDecimal residual, long runs) {}
+        Row row = jdbc.sql("""
+                SELECT COALESCE(SUM(l.vat_aed) FILTER (WHERE l.direction = 'IN' AND COALESCE(l.input_attribution, 'RESIDUAL') = 'RESIDUAL' AND l.blocked_category IS NULL AND l.line_kind = 'NORMAL' AND l.superseded_at IS NULL), 0) AS residual,
+                       (SELECT COUNT(*) FROM apportionment_run r WHERE r.period_id = :period) AS runs
+                FROM tax_line l WHERE l.period_id = :period
+                """).param("period", c.period().id()).query(Row.class).single();
+        if (row.residual().signum() == 0 || row.runs() > 0) {
+            return List.of();
+        }
+        return List.of(finding("T09", "apportionment", "Exempt supplies of AED " + exempt + " and residual input tax of AED " + row.residual() + ", but no apportionment has been run", row.residual(),
+                "exemptSupplies", exempt.toPlainString(), "residualInput", row.residual().toPlainString()));
+    }
+
+    /** Mirrors the capital asset service: an interval ended, and this is the first return after it. */
+    private List<Finding> t10(Context c) {
+        record Row(UUID id, String reference, LocalDate firstUsedOn, int adjustmentYears, long done) {}
+        List<Finding> out = new ArrayList<>();
+        jdbc.sql("""
+                SELECT a.id, a.reference, a.first_used_on, a.adjustment_years, (SELECT COUNT(*) FROM capital_asset_interval i WHERE i.asset_id = a.id) AS done
+                FROM capital_asset a WHERE a.entity_id = ? AND a.disposed_on IS NULL
+                """).param(c.entity().id()).query(Row.class).list().forEach(r -> {
+            int next = (int) r.done() + 1;
+            if (next > r.adjustmentYears()) {
+                return;
+            }
+            LocalDate end = r.firstUsedOn().plusYears(next).minusDays(1);
+            if (c.period().periodEnd().isAfter(end) && !c.period().periodStart().minusDays(1).isAfter(end)) {
+                out.add(finding("T10", r.id() + ":" + next, "Capital asset " + r.reference() + ": interval " + next + " ended on " + end + ", so its adjustment belongs in this return", BigDecimal.ZERO,
+                        "reference", r.reference(), "interval", next, "intervalEnd", end.toString()));
+            }
+        });
+        return out;
+    }
 
     /** Grouped by code, because a data problem usually affects many lines the same way. */
     private List<Finding> lineFlags(Context c) {

@@ -22,8 +22,15 @@ public class AdjustmentController {
     private final CorrectionService corrections;
     private final PeriodCalendar calendar;
     private final AccessControl access;
+    private final ApportionmentService apportionment;
+    private final BadDebtService badDebts;
+    private final CapitalAssetService assets;
 
-    public AdjustmentController(AdjustmentService adjustments, CorrectionService corrections, PeriodCalendar calendar, AccessControl access) {
+    public AdjustmentController(AdjustmentService adjustments, CorrectionService corrections, PeriodCalendar calendar, AccessControl access,
+                                ApportionmentService apportionment, BadDebtService badDebts, CapitalAssetService assets) {
+        this.apportionment = apportionment;
+        this.badDebts = badDebts;
+        this.assets = assets;
         this.adjustments = adjustments;
         this.corrections = corrections;
         this.calendar = calendar;
@@ -81,6 +88,101 @@ public class AdjustmentController {
         TaxPeriod p = calendar.get(id);
         access.requireReadPeriod(p.entityId(), p.isLocked());
         return corrections.list(id);
+    }
+
+    public record ApportionInput(java.math.BigDecimal excludedSuppliesAed, boolean post) {}
+
+    public record UseInput(java.math.BigDecimal taxableUsePct) {}
+
+    public record DisposalInput(java.time.LocalDate disposedOn, boolean taxable) {}
+
+    @PostMapping("/periods/{id}/apportionment")
+    public ApportionmentService.Result apportion(@PathVariable UUID id, @RequestBody ApportionInput in) {
+        TaxPeriod p = calendar.get(id);
+        access.require(p.entityId(), Permission.EDIT_ADJUSTMENTS);
+        return apportionment.runPeriod(p, in.excludedSuppliesAed(), in.post());
+    }
+
+    @PostMapping("/periods/{id}/apportionment/annual")
+    public ApportionmentService.Result apportionAnnual(@PathVariable UUID id, @RequestBody ApportionInput in) {
+        TaxPeriod p = calendar.get(id);
+        access.require(p.entityId(), Permission.EDIT_ADJUSTMENTS);
+        return apportionment.runAnnual(p, in.excludedSuppliesAed(), in.post());
+    }
+
+    @GetMapping("/periods/{id}/apportionment")
+    public List<ApportionmentService.Run> apportionmentRuns(@PathVariable UUID id) {
+        TaxPeriod p = calendar.get(id);
+        access.requireReadPeriod(p.entityId(), p.isLocked());
+        return apportionment.runs(id);
+    }
+
+    @GetMapping("/periods/{id}/bad-debt")
+    public List<BadDebtService.Claim> badDebtClaims(@PathVariable UUID id) {
+        TaxPeriod p = calendar.get(id);
+        access.requireReadPeriod(p.entityId(), p.isLocked());
+        return badDebts.list(id);
+    }
+
+    @GetMapping("/periods/{id}/bad-debt/candidates")
+    public List<BadDebtService.Candidate> badDebtCandidates(@PathVariable UUID id) {
+        TaxPeriod p = calendar.get(id);
+        access.require(p.entityId(), Permission.EDIT_ADJUSTMENTS);
+        return badDebts.candidates(p);
+    }
+
+    @PostMapping("/periods/{id}/bad-debt")
+    public BadDebtService.Claim claimBadDebt(@PathVariable UUID id, @RequestBody BadDebtService.ReliefInput in) {
+        TaxPeriod p = calendar.get(id);
+        access.require(p.entityId(), Permission.EDIT_ADJUSTMENTS);
+        return badDebts.claimRelief(p, in);
+    }
+
+    @GetMapping("/periods/{id}/bad-debt/recoverable")
+    public List<BadDebtService.Relieved> badDebtRecoverable(@PathVariable UUID id) {
+        TaxPeriod p = calendar.get(id);
+        access.require(p.entityId(), Permission.EDIT_ADJUSTMENTS);
+        return badDebts.recoverable(p.entityId());
+    }
+
+    @PostMapping("/periods/{id}/bad-debt/recovery")
+    public BadDebtService.Claim recoverBadDebt(@PathVariable UUID id, @RequestBody BadDebtService.RecoveryInput in) {
+        TaxPeriod p = calendar.get(id);
+        access.require(p.entityId(), Permission.EDIT_ADJUSTMENTS);
+        return badDebts.recordRecovery(p, in);
+    }
+
+    @GetMapping("/entities/{id}/capital-assets")
+    public List<CapitalAssetService.AssetView> capitalAssets(@PathVariable UUID id) {
+        access.require(id, Permission.VIEW);
+        return assets.list(id);
+    }
+
+    @PostMapping("/entities/{id}/capital-assets")
+    public CapitalAssetService.AssetView registerAsset(@PathVariable UUID id, @RequestBody CapitalAssetService.AssetInput in) {
+        access.require(id, Permission.EDIT_ADJUSTMENTS);
+        return assets.register(id, in);
+    }
+
+    @GetMapping("/periods/{id}/capital-assets/due")
+    public List<CapitalAssetService.Due> assetsDue(@PathVariable UUID id) {
+        TaxPeriod p = calendar.get(id);
+        access.requireReadPeriod(p.entityId(), p.isLocked());
+        return assets.dueIn(p);
+    }
+
+    @PostMapping("/periods/{id}/capital-assets/{assetId}/adjust")
+    public CapitalAssetService.AssetView adjustAsset(@PathVariable UUID id, @PathVariable UUID assetId, @RequestBody UseInput in) {
+        TaxPeriod p = calendar.get(id);
+        access.require(p.entityId(), Permission.EDIT_ADJUSTMENTS);
+        return assets.adjust(p, assetId, in.taxableUsePct());
+    }
+
+    @PostMapping("/periods/{id}/capital-assets/{assetId}/dispose")
+    public CapitalAssetService.AssetView disposeAsset(@PathVariable UUID id, @PathVariable UUID assetId, @RequestBody DisposalInput in) {
+        TaxPeriod p = calendar.get(id);
+        access.require(p.entityId(), Permission.EDIT_ADJUSTMENTS);
+        return assets.dispose(p, assetId, in.disposedOn(), in.taxable());
     }
 
     private void requireAdjust(UUID entity) {

@@ -1,6 +1,8 @@
 package ae.vattool.ingestion;
 
 import ae.vattool.ingestion.Templates.Kind;
+import ae.vattool.ingestion.einvoice.EinvoiceEvent;
+import ae.vattool.ingestion.einvoice.EinvoiceStore;
 import ae.vattool.ledger.Ledger;
 import ae.vattool.ledger.LineInput;
 import ae.vattool.masterdata.LegalEntity;
@@ -8,6 +10,8 @@ import ae.vattool.masterdata.PeriodCalendar;
 import ae.vattool.masterdata.TaxPeriod;
 import ae.vattool.masterdata.TrnValidator;
 import ae.vattool.platform.tenancy.RequestContext;
+import ae.vattool.rules.RulePackDefinition;
+import ae.vattool.rules.RulePackStore;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -83,13 +87,18 @@ public class RowProcessor {
     private final Ledger ledger;
     private final PeriodCalendar calendar;
     private final TrnValidator trnValidator;
+    private final RulePackStore packs;
+    private final EinvoiceStore einvoices;
 
-    public RowProcessor(JdbcClient jdbc, TransactionTemplate tx, Ledger ledger, PeriodCalendar calendar, TrnValidator trnValidator) {
+    public RowProcessor(JdbcClient jdbc, TransactionTemplate tx, Ledger ledger, PeriodCalendar calendar, TrnValidator trnValidator,
+                        RulePackStore packs, EinvoiceStore einvoices) {
         this.jdbc = jdbc;
         this.tx = tx;
         this.ledger = ledger;
         this.calendar = calendar;
         this.trnValidator = trnValidator;
+        this.packs = packs;
+        this.einvoices = einvoices;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -114,7 +123,7 @@ public class RowProcessor {
     }
 
     /** Retries rows that were waiting for an FX rate, after new rates arrive. */
-    public void reprocessHeld(LegalEntity filer) {
+    public void reprocessHeld() {
         record Held(UUID id, UUID batchId, String kind, String raw) {}
         List<Held> held = tx.execute(s -> jdbc.sql("""
                 SELECT r.id, r.batch_id, b.kind, r.raw::text AS raw FROM ingest_row r
@@ -159,6 +168,11 @@ public class RowProcessor {
                 case GL -> glBalance(ctx, row);
                 case FX -> fxRate(row);
                 case OPENING_AP -> openingAp(ctx, row);
+                case GL_JOURNAL -> glJournal(ctx, row);
+                case MARGIN -> marginSale(ctx, row);
+                case OPENING_ASSETS -> openingAsset(ctx, row);
+                case OPENING_APPORTIONMENT -> openingApportionment(ctx, row);
+                case UBL -> ublInvoice(ctx, row);
             };
         } catch (RowError e) {
             return new Outcome("REJECTED", e.errors, e.rowKey, null, null);
@@ -466,6 +480,262 @@ public class RowProcessor {
                 .param("paid", paid).param("gross", gross).param("recoverable", recoverable).param("batch", ctx.batchId)
                 .query(UUID.class).single();
         return new Outcome("LOADED", List.of(), "IN|OPENING|" + key, null, documentId);
+    }
+
+    /** The ledger listing for the FTA Audit File. It has no effect on tax, so it does not touch the return. */
+    private Outcome glJournal(FileContext ctx, Map<String, String> r) {
+        Errors e = new Errors();
+        LocalDate date = date(r, "transaction_date", e, true);
+        String account = text(r.get("account_id"));
+        if (account == null) {
+            e.add("ACCOUNT_ID_REQUIRED");
+        }
+        String transaction = text(r.get("transaction_id"));
+        if (transaction == null) {
+            e.add("TRANSACTION_ID_REQUIRED");
+        }
+        BigDecimal debit = money(r, "debit", e, true);
+        BigDecimal credit = money(r, "credit", e, true);
+        BigDecimal balance = money(r, "balance", e, false);
+        int lineNo = lineNo(r, e);
+        String key = "GL|" + transaction + "|" + lineNo;
+        e.throwIfAny(key);
+        if (isDuplicateInFile(ctx, key, r)) {
+            return duplicateOutcome(ctx, key, r);
+        }
+        jdbc.sql("""
+                INSERT INTO gl_journal_line (id, tenant_id, entity_id, transaction_date, account_id, account_name, description, party_name, transaction_id, line_no,
+                    source_document_id, source_type, debit_aed, credit_aed, balance_aed, batch_id)
+                VALUES (:id, :tenant, :entity, :date, :account, :accountName, :description, :party, :transaction, :lineNo, :source, :type, :debit, :credit, :balance, :batch)
+                ON CONFLICT (tenant_id, entity_id, transaction_id, line_no) DO UPDATE SET
+                    transaction_date = EXCLUDED.transaction_date, account_id = EXCLUDED.account_id, account_name = EXCLUDED.account_name,
+                    description = EXCLUDED.description, party_name = EXCLUDED.party_name, source_document_id = EXCLUDED.source_document_id,
+                    source_type = EXCLUDED.source_type, debit_aed = EXCLUDED.debit_aed, credit_aed = EXCLUDED.credit_aed,
+                    balance_aed = EXCLUDED.balance_aed, batch_id = EXCLUDED.batch_id
+                """)
+                .param("id", UUID.randomUUID()).param("tenant", RequestContext.requireTenant()).param("entity", ctx.filer.id()).param("date", date)
+                .param("account", account).param("accountName", text(r.get("account_name"))).param("description", text(r.get("description")))
+                .param("party", text(r.get("name"))).param("transaction", transaction).param("lineNo", lineNo)
+                .param("source", text(r.get("source_document_id"))).param("type", text(r.get("source_type")))
+                .param("debit", debit).param("credit", credit).param("balance", balance == null ? BigDecimal.ZERO : balance).param("batch", ctx.batchId)
+                .update();
+        return new Outcome("LOADED", List.of(), key, null, null);
+    }
+
+    /**
+     * A sale under the profit margin scheme (RET-05): VAT is the tax fraction of the margin, and no
+     * VAT arises on a sale at a loss. The purchase and selling prices stay on the schedule, and the
+     * ledger holds the margin, which is what reaches the box.
+     */
+    private Outcome marginSale(FileContext ctx, Map<String, String> r) {
+        Errors e = new Errors();
+        String number = text(r.get("doc_number"));
+        if (number == null) {
+            e.add("DOC_NUMBER_REQUIRED");
+        }
+        LocalDate date = date(r, "doc_date", e, true);
+        String category = upper(r.get("category"));
+        BigDecimal purchase = money(r, "purchase_price_aed", e, true);
+        BigDecimal selling = money(r, "selling_price_aed", e, true);
+        BigDecimal costs = money(r, "acquisition_costs_aed", e, false);
+        Establishment est = establishment(ctx, r, e);
+        String trn = text(r.get("counterparty_trn"));
+        if (trn != null && !trnValidator.isValid(trn)) {
+            e.add("COUNTERPARTY_TRN_INVALID");
+        }
+        String naturalKey = naturalKey(trn, "MARGIN_SALE", number, date);
+        String rowKey = "OUT|" + naturalKey + "|1";
+        RulePackDefinition def = date == null ? null : packs.forDate(date).definition();
+        if (def != null && (def.marginScheme() == null || !def.marginScheme().eligibleCategories().contains(category))) {
+            e.add("MARGIN_CATEGORY_INVALID");
+        }
+        e.throwIfAny(rowKey);
+        if (isDuplicateInFile(ctx, rowKey, r)) {
+            return duplicateOutcome(ctx, rowKey, r);
+        }
+        if (flag(r.get("void"))) {
+            Outcome voided = voidLine(ctx, "OUT", "ERP", naturalKey, 1, rowKey);
+            if (voided.documentId() != null) {
+                jdbc.sql("DELETE FROM margin_sale WHERE document_id = ?").param(voided.documentId()).update();
+            }
+            return voided;
+        }
+        Optional<TaxPeriod> period = ledger.periodFor(ctx.filer.id(), date, ctx.cache);
+        if (period.isEmpty()) {
+            return new Outcome("REJECTED", List.of("BEFORE_FIRST_PERIOD"), rowKey, null, null);
+        }
+        BigDecimal acquisition = costs == null ? BigDecimal.ZERO : costs;
+        BigDecimal margin = selling.subtract(purchase).subtract(acquisition).max(BigDecimal.ZERO);
+        BigDecimal rate = def.rates().standardPct();
+        BigDecimal vat = margin.multiply(rate).divide(rate.add(BigDecimal.valueOf(100)), 2, RoundingMode.HALF_UP);
+        BigDecimal net = margin.subtract(vat);
+        UUID member = est != null ? est.entityId() : ctx.filer.id();
+        UUID documentId = jdbc.sql("""
+                INSERT INTO source_document (id, tenant_id, filer_entity_id, member_entity_id, source_system, direction, doc_type, doc_number, doc_date, natural_key,
+                    counterparty_trn, counterparty_name, customer_type, has_tax_invoice, gross_aed, first_batch_id, last_batch_id)
+                VALUES (:id, :tenant, :filer, :member, 'ERP', 'OUT', 'MARGIN_SALE', :number, :date, :key, :trn, :name, :customerType, true, :gross, :batch, :batch)
+                ON CONFLICT (tenant_id, filer_entity_id, source_system, direction, natural_key) DO UPDATE SET
+                    counterparty_name = EXCLUDED.counterparty_name, gross_aed = EXCLUDED.gross_aed, last_batch_id = EXCLUDED.last_batch_id, voided_at = NULL
+                RETURNING id
+                """)
+                .param("id", UUID.randomUUID()).param("tenant", RequestContext.requireTenant()).param("filer", ctx.filer.id()).param("member", member)
+                .param("number", number).param("date", date).param("key", naturalKey).param("trn", trn).param("name", text(r.get("counterparty_name")))
+                .param("customerType", trn == null ? "B2C" : "B2B").param("gross", selling).param("batch", ctx.batchId)
+                .query(UUID.class).single();
+        LineInput line = new LineInput(documentId, ctx.currentRowId, ctx.filer.id(), member, est == null ? null : est.id(),
+                est == null ? null : est.emirate(), est != null && est.designatedZone(), "ERP", "OUT", "MARGIN_SALE", 1, "GOODS", null, null,
+                text(r.get("description")), trn, null, date, "AED", BigDecimal.ONE, net, vat, net, vat, null, "STANDARD");
+        Ledger.Written written = ledger.writeSourceLine(line, ctx.cache);
+        jdbc.sql("""
+                INSERT INTO margin_sale (id, tenant_id, entity_id, period_id, document_id, doc_number, doc_date, category, description, purchase_price_aed,
+                    acquisition_costs_aed, selling_price_aed, margin_aed, vat_aed)
+                VALUES (:id, :tenant, :entity, :period, :document, :number, :date, :category, :description, :purchase, :costs, :selling, :margin, :vat)
+                ON CONFLICT (tenant_id, document_id) DO UPDATE SET
+                    period_id = EXCLUDED.period_id, category = EXCLUDED.category, description = EXCLUDED.description, purchase_price_aed = EXCLUDED.purchase_price_aed,
+                    acquisition_costs_aed = EXCLUDED.acquisition_costs_aed, selling_price_aed = EXCLUDED.selling_price_aed, margin_aed = EXCLUDED.margin_aed, vat_aed = EXCLUDED.vat_aed
+                """)
+                .param("id", UUID.randomUUID()).param("tenant", RequestContext.requireTenant()).param("entity", ctx.filer.id()).param("period", written.periodId())
+                .param("document", documentId).param("number", number).param("date", date).param("category", category).param("description", text(r.get("description")))
+                .param("purchase", purchase).param("costs", acquisition).param("selling", selling).param("margin", margin).param("vat", vat)
+                .update();
+        resolveEarlierProblems(ctx, rowKey);
+        return new Outcome(written.result() == Ledger.WriteResult.UNCHANGED ? "UNCHANGED" : "LOADED", List.of(), rowKey, written.periodId(), documentId);
+    }
+
+    /** A capital asset already under adjustment at go-live (ONB-06). It starts its intervals like any other. */
+    private Outcome openingAsset(FileContext ctx, Map<String, String> r) {
+        Errors e = new Errors();
+        String reference = text(r.get("reference"));
+        if (reference == null) {
+            e.add("REFERENCE_REQUIRED");
+        }
+        String description = text(r.get("description"));
+        if (description == null) {
+            e.add("DESCRIPTION_REQUIRED");
+        }
+        String category = upper(r.get("category"));
+        if (category == null || !Set.of("REAL_ESTATE", "OTHER").contains(category)) {
+            e.add("CATEGORY_INVALID");
+        }
+        BigDecimal cost = money(r, "cost_aed", e, true);
+        BigDecimal vat = money(r, "input_vat_aed", e, true);
+        BigDecimal initial = percent(r, "initial_recovery_pct", e);
+        if (initial == null) {
+            e.add("INITIAL_RECOVERY_PCT_REQUIRED");
+        }
+        LocalDate firstUsed = date(r, "first_used_on", e, true);
+        String key = "ASSET|" + reference;
+        e.throwIfAny(key);
+        RulePackDefinition.CapitalAssets rule = packs.forDate(firstUsed).definition().capitalAssets();
+        if (rule == null) {
+            return new Outcome("REJECTED", List.of("RULE_PACK_SECTION_MISSING"), key, null, null);
+        }
+        if (cost.compareTo(rule.thresholdAed()) < 0) {
+            return new Outcome("REJECTED", List.of("ASSET_BELOW_THRESHOLD"), key, null, null);
+        }
+        int inserted = jdbc.sql("""
+                INSERT INTO capital_asset (id, tenant_id, entity_id, reference, description, category, cost_aed, input_vat_aed, initial_recovery_pct, first_used_on,
+                    adjustment_years, opening, created_by)
+                VALUES (:id, :tenant, :entity, :reference, :description, :category, :cost, :vat, :initial, :firstUsed, :years, true, :by)
+                ON CONFLICT (tenant_id, entity_id, reference) DO NOTHING
+                """)
+                .param("id", UUID.randomUUID()).param("tenant", RequestContext.requireTenant()).param("entity", ctx.filer.id()).param("reference", reference)
+                .param("description", description).param("category", category).param("cost", cost).param("vat", vat).param("initial", initial)
+                .param("firstUsed", firstUsed).param("years", "REAL_ESTATE".equals(category) ? rule.realEstateYears() : rule.otherYears())
+                .param("by", RequestContext.requireActor().actorId())
+                .update();
+        return new Outcome(inserted == 1 ? "LOADED" : "UNCHANGED", List.of(), key, null, null);
+    }
+
+    /** What the tax year held before go-live, so the annual adjustment covers the whole year (ONB-06). */
+    private Outcome openingApportionment(FileContext ctx, Map<String, String> r) {
+        Errors e = new Errors();
+        LocalDate start = date(r, "tax_year_start", e, true);
+        BigDecimal directRecoverable = money(r, "direct_recoverable_aed", e, true);
+        BigDecimal directExempt = money(r, "direct_exempt_aed", e, true);
+        BigDecimal taxable = money(r, "taxable_supplies_aed", e, true);
+        BigDecimal total = money(r, "total_supplies_aed", e, true);
+        BigDecimal residual = money(r, "residual_input_aed", e, true);
+        BigDecimal recovered = money(r, "recovered_aed", e, true);
+        String key = "APPORTIONMENT|" + start;
+        e.throwIfAny(key);
+        jdbc.sql("""
+                INSERT INTO apportionment_opening (id, tenant_id, entity_id, tax_year_start, direct_recoverable_aed, direct_exempt_aed, taxable_supplies_aed,
+                    total_supplies_aed, residual_input_aed, recovered_aed, batch_id)
+                VALUES (:id, :tenant, :entity, :start, :recoverable, :exempt, :taxable, :total, :residual, :recovered, :batch)
+                ON CONFLICT (tenant_id, entity_id, tax_year_start) DO UPDATE SET
+                    direct_recoverable_aed = EXCLUDED.direct_recoverable_aed, direct_exempt_aed = EXCLUDED.direct_exempt_aed, taxable_supplies_aed = EXCLUDED.taxable_supplies_aed,
+                    total_supplies_aed = EXCLUDED.total_supplies_aed, residual_input_aed = EXCLUDED.residual_input_aed, recovered_aed = EXCLUDED.recovered_aed, batch_id = EXCLUDED.batch_id
+                """)
+                .param("id", UUID.randomUUID()).param("tenant", RequestContext.requireTenant()).param("entity", ctx.filer.id()).param("start", start)
+                .param("recoverable", directRecoverable).param("exempt", directExempt).param("taxable", taxable).param("total", total)
+                .param("residual", residual).param("recovered", recovered).param("batch", ctx.batchId)
+                .update();
+        return new Outcome("LOADED", List.of(), key, null, null);
+    }
+
+    /**
+     * An e-invoice from another ASP or a client archive (ING-02). It joins reconciliation set A through
+     * the same store as the platform's events, and the event id comes from its content, so loading a
+     * file again changes nothing. Reusing a UUID for different figures is refused, never overwritten.
+     */
+    private Outcome ublInvoice(FileContext ctx, Map<String, String> r) {
+        String problem = text(r.get("parse_error"));
+        String rowKey = "UBL|" + r.get("source_file") + "|" + r.get("number");
+        if (problem != null) {
+            return new Outcome("REJECTED", List.of("UBL_UNREADABLE:" + problem), rowKey, null, null);
+        }
+        Errors e = new Errors();
+        UUID invoice = uuid(r, "invoice_uuid", e);
+        LocalDate date = date(r, "issue_date", e, true);
+        BigDecimal net = money(r, "net_aed", e, true);
+        BigDecimal vat = money(r, "vat_aed", e, true);
+        String number = text(r.get("number"));
+        if (number == null) {
+            e.add("NUMBER_REQUIRED");
+        }
+        String supplier = text(r.get("supplier_trn"));
+        String buyer = text(r.get("buyer_trn"));
+        rowKey = "UBL|" + invoice;
+        e.throwIfAny(rowKey);
+        // A credit note's amounts are positive in UBL. Set A holds them signed, as the platform's events do.
+        if ("CREDIT_NOTE".equals(text(r.get("doc_type")))) {
+            net = net.negate();
+            vat = vat.negate();
+        }
+        String lifecycle;
+        if (sameTaxpayer(supplier, ctx.filer.trn())) {
+            lifecycle = EinvoiceEvent.ISSUED;
+        } else if (sameTaxpayer(buyer, ctx.filer.trn())) {
+            lifecycle = EinvoiceEvent.RECEIVED;
+        } else {
+            return new Outcome("REJECTED", List.of("UBL_TRN_NOT_THIS_ENTITY"), rowKey, null, null);
+        }
+        record Existing(boolean hasInvoiceData, String number, BigDecimal netAed, BigDecimal vatAed) {}
+        Optional<Existing> existing = jdbc.sql("SELECT has_invoice_data, number, net_aed, vat_aed FROM einvoice WHERE invoice_uuid = ?")
+                .param(invoice).query(Existing.class).optional();
+        if (existing.isPresent() && existing.get().hasInvoiceData()
+                && (!number.equals(existing.get().number()) || net.compareTo(existing.get().netAed()) != 0 || vat.compareTo(existing.get().vatAed()) != 0)) {
+            return new Outcome("REJECTED", List.of("UBL_UUID_CONFLICT"), rowKey, null, null);
+        }
+        java.time.OffsetDateTime at = date.atStartOfDay().atOffset(java.time.ZoneOffset.ofHours(4));
+        String content = String.join("|", String.valueOf(invoice), number, net.toPlainString(), vat.toPlainString(), lifecycle);
+        EinvoiceEvent event = new EinvoiceEvent("1.0", UUID.nameUUIDFromBytes(("ubl|" + content).getBytes(java.nio.charset.StandardCharsets.UTF_8)), lifecycle, at,
+                RequestContext.requireTenant(), ctx.filer.trn(), invoice,
+                new EinvoiceEvent.Invoice(text(r.get("doc_type")), number, date, supplier, buyer, text(r.get("currency")), net, vat, text(r.get("billing_reference"))),
+                null, null);
+        EinvoiceStore.Applied applied = einvoices.apply(event);
+        jdbc.sql("UPDATE einvoice SET source = 'UBL_IMPORT' WHERE invoice_uuid = ?").param(invoice).update();
+        resolveEarlierProblems(ctx, rowKey);
+        return new Outcome(applied == EinvoiceStore.Applied.DUPLICATE ? "UNCHANGED" : "LOADED", List.of(), rowKey, null, null);
+    }
+
+    /** E-invoices may carry a full TRN or the 10-digit TIN, which is the first ten digits of it. */
+    private static boolean sameTaxpayer(String onInvoice, String filerTrn) {
+        if (onInvoice == null || filerTrn == null) {
+            return false;
+        }
+        return onInvoice.equals(filerTrn) || (onInvoice.length() == 10 && filerTrn.startsWith(onInvoice));
     }
 
     private Outcome voidLine(FileContext ctx, String direction, String source, String naturalKey, int lineNo, String rowKey) {

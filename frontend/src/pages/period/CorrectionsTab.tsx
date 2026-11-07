@@ -3,9 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
-import type { CorrectionCase, CorrectionPreview, Evidence } from "../../api/types";
+import type { CorrectionCase, CorrectionPreview, DisclosureView, Evidence } from "../../api/types";
+import { DocumentList, uploadEvidence } from "../../components/DocumentList";
+import { PenaltyPanel } from "../../components/PenaltyPanel";
 import { Query } from "../../components/Query";
-import { Badge, ErrorAlert, Field, Money, useAction, useRoles } from "../../components/ui";
+import { ApiError } from "../../api/client";
+import { Badge, ErrorAlert, Field, Money, useAction, useMe, useRoles } from "../../components/ui";
 import { formatAed } from "../../i18n";
 import { usePeriod } from "./PeriodLayout";
 
@@ -82,6 +85,113 @@ export function CorrectionsTab() {
           )}
         </Query>
       </section>
+      <Query query={q}>
+        {(rows) => <>{rows.filter((c) => c.route === "FORM_211").map((c) => <DisclosureCard key={c.id} correction={c} />)}</>}
+      </Query>
     </>
+  );
+}
+
+/** One voluntary disclosure, from draft to settled. A second person approves, and an agent submits on EmaraTax. */
+function DisclosureCard({ correction }: { correction: CorrectionCase }) {
+  const { t } = useTranslation();
+  const { periodId, entity } = usePeriod();
+  const roles = useRoles(entity.id);
+  const me = useMe();
+  const key = ["disclosure", correction.id];
+  const q = useQuery({
+    queryKey: key,
+    queryFn: async () => {
+      try {
+        return await api.get<DisclosureView>(`/corrections/${correction.id}/disclosure`);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      }
+    },
+  });
+  const [draft, setDraft] = useState({ discoveredOn: "", natureOfError: "" });
+  const create = useAction(() => api.post(`/corrections/${correction.id}/disclosure`, draft), [key]);
+  const act = useAction(({ path, body }: { path: string; body?: unknown }) => api.post(`/disclosures/${q.data?.disclosure.id}/${path}`, body), [key]);
+  const ack = useRef<HTMLInputElement>(null);
+  const [sub, setSub] = useState({ submissionRef: "", submittedOn: "" });
+  const submit = useAction(async () => {
+    const f = ack.current?.files?.[0];
+    if (!f) throw new Error(t("filing.ackNeeded"));
+    return api.post(`/disclosures/${q.data?.disclosure.id}/submission`, { ...sub, ackEvidenceId: await uploadEvidence(entity.id, f, periodId, "Form 211 acknowledgement") });
+  }, [key]);
+  const [settle, setSettle] = useState({ settledOn: "", amountAed: "", gibanReference: "" });
+  return (
+    <section className="card">
+      <h2>{t("disclosure.title")}</h2>
+      <ErrorAlert error={create.error ?? act.error ?? submit.error} />
+      <Query query={q}>
+        {(v) => !v ? (
+          roles.isReviewer ? (
+            <form onSubmit={(e) => { e.preventDefault(); create.mutate(undefined); }}>
+              <p className="muted">{t("disclosure.explain")}</p>
+              <div className="form-grid">
+                <Field label={t("disclosure.discoveredOn")}><input type="date" required value={draft.discoveredOn} onChange={(e) => setDraft({ ...draft, discoveredOn: e.target.value })} /></Field>
+                <Field label={t("disclosure.nature")}><input required value={draft.natureOfError} onChange={(e) => setDraft({ ...draft, natureOfError: e.target.value })} /></Field>
+              </div>
+              <button type="submit" className="primary" disabled={create.isPending}>{t("disclosure.draft")}</button>
+            </form>
+          ) : <p className="muted">{t("disclosure.notDrafted")}</p>
+        ) : (
+          <>
+            <div className="row">
+              <Badge value={v.disclosure.status} />
+              <span>{t("disclosure.difference", { amount: formatAed(v.taxDifferenceAed) })}</span>
+              <span className="muted">{t("disclosure.dueBy")} <span className="ltr">{v.disclosure.dueBy}</span></span>
+              {v.overdue && <span className="badge bad">{t("disclosure.overdue")}</span>}
+            </div>
+            <p>{v.disclosure.natureOfError}</p>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>{t("return.box")}</th><th>{t("exceptions.description")}</th><th className="num">{t("disclosure.vatFiled")}</th><th className="num">{t("disclosure.vatCorrected")}</th></tr></thead>
+                <tbody>
+                  {v.boxes.filter((b) => Number(b.vatFrom) !== Number(b.vatTo)).map((b) => (
+                    <tr key={b.box}><td className="ltr">{b.box}</td><td>{b.label}</td><td className="num"><Money value={b.vatFrom} /></td><td className="num"><Money value={b.vatTo} /></td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <h3 style={{ marginBlockStart: 12 }}>{t("penalty.title")}</h3>
+            <PenaltyPanel estimate={v.penalty} />
+            <h3 style={{ marginBlockStart: 12 }}>{t("disclosure.pack")}</h3>
+            <DocumentList documents={v.documents} />
+            <div className="row">
+              {roles.isReviewer && <button type="button" disabled={act.isPending} onClick={() => act.mutate({ path: "pack" })}>{t("disclosure.makePack")}</button>}
+              {v.disclosure.status === "DRAFT" && (roles.canDecide || roles.isPartner) && v.disclosure.createdBy !== me.data?.id && (
+                <button type="button" className="primary" disabled={act.isPending} onClick={() => act.mutate({ path: "approve" })}>{t("disclosure.approve")}</button>
+              )}
+            </div>
+            {v.disclosure.status === "APPROVED" && roles.canFile && (
+              <form style={{ marginBlockStart: 12 }} onSubmit={(e) => { e.preventDefault(); submit.mutate(undefined); }}>
+                <h3>{t("disclosure.recordSubmission")}</h3>
+                <div className="form-grid">
+                  <Field label={t("filing.ref")}><input required dir="ltr" value={sub.submissionRef} onChange={(e) => setSub({ ...sub, submissionRef: e.target.value })} /></Field>
+                  <Field label={t("filing.date")}><input type="date" required value={sub.submittedOn} onChange={(e) => setSub({ ...sub, submittedOn: e.target.value })} /></Field>
+                  <Field label={t("filing.ack")}><input ref={ack} type="file" required /></Field>
+                </div>
+                <button type="submit" className="primary" disabled={submit.isPending}>{t("filing.record")}</button>
+              </form>
+            )}
+            {v.disclosure.status === "SUBMITTED" && roles.canFile && (
+              <form style={{ marginBlockStart: 12 }} onSubmit={(e) => { e.preventDefault(); act.mutate({ path: "settlement", body: { ...settle, gibanReference: settle.gibanReference || null } }); }}>
+                <h3>{t("disclosure.recordSettlement")}</h3>
+                <div className="form-grid">
+                  <Field label={t("filing.date")}><input type="date" required value={settle.settledOn} onChange={(e) => setSettle({ ...settle, settledOn: e.target.value })} /></Field>
+                  <Field label={t("filing.amountPaid")}><input type="number" step="0.01" required value={settle.amountAed} onChange={(e) => setSettle({ ...settle, amountAed: e.target.value })} /></Field>
+                  <Field label={t("filing.giban")}><input dir="ltr" value={settle.gibanReference} onChange={(e) => setSettle({ ...settle, gibanReference: e.target.value })} /></Field>
+                </div>
+                <button type="submit" className="primary" disabled={act.isPending}>{t("common.save")}</button>
+              </form>
+            )}
+            {v.disclosure.submissionRef && <p>{t("filing.filed", { ref: v.disclosure.submissionRef, on: v.disclosure.submittedOn })}</p>}
+          </>
+        )}
+      </Query>
+    </section>
   );
 }

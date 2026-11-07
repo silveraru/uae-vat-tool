@@ -1,0 +1,550 @@
+{
+ "doc.page": {
+  "en": "Page",
+  "ar": "صفحة"
+ },
+ "doc.of": {
+  "en": "of",
+  "ar": "من"
+ },
+ "doc.notSignedOff": {
+  "en": "The rule pack has not been signed off by the tax team.",
+  "ar": "لم يعتمد فريق الضرائب حزمة القواعد بعد."
+ },
+ "doc.trn": {
+  "en": "TRN",
+  "ar": "رقم التسجيل الضريبي"
+ },
+ "doc.period": {
+  "en": "Tax period",
+  "ar": "الفترة الضريبية"
+ },
+ "doc.due": {
+  "en": "Due",
+  "ar": "تاريخ الاستحقاق"
+ },
+ "doc.box": {
+  "en": "Box",
+  "ar": "الخانة"
+ },
+ "doc.description": {
+  "en": "Description",
+  "ar": "الوصف"
+ },
+ "doc.amount": {
+  "en": "Amount (AED)",
+  "ar": "المبلغ (درهم)"
+ },
+ "doc.total": {
+  "en": "Total",
+  "ar": "الإجمالي"
+ },
+ "doc.evidence": {
+  "en": "Supporting evidence",
+  "ar": "المستندات المؤيدة"
+ },
+ "doc.noEvidence": {
+  "en": "No evidence is attached yet.",
+  "ar": "لم تُرفق مستندات بعد."
+ },
+ "doc.file": {
+  "en": "File",
+  "ar": "الملف"
+ },
+ "doc.document": {
+  "en": "Document",
+  "ar": "المستند"
+ },
+ "doc.date": {
+  "en": "Date",
+  "ar": "التاريخ"
+ },
+ "doc.supplier": {
+  "en": "Supplier",
+  "ar": "المورد"
+ },
+ "doc.yes": {
+  "en": "Yes",
+  "ar": "نعم"
+ },
+ "doc.no": {
+  "en": "No",
+  "ar": "لا"
+ },
+ "pack.title": {
+  "en": "VAT201 return pack",
+  "ar": "حزمة الإقرار الضريبي VAT201"
+ },
+ "pack.version": {
+  "en": "version",
+  "ar": "النسخة"
+ },
+ "pack.amount": {
+  "en": "Amount (AED)",
+  "ar": "المبلغ (درهم)"
+ },
+ "pack.vat": {
+  "en": "VAT (AED)",
+  "ar": "الضريبة (درهم)"
+ },
+ "pack.adjustment": {
+  "en": "Adjustment (AED)",
+  "ar": "التعديل (درهم)"
+ },
+ "pack.entry": {
+  "en": "How to enter in EmaraTax",
+  "ar": "طريقة الإدخال في إمارات تاكس"
+ },
+ "pack.reconSheet": {
+  "en": "Reconciliation",
+  "ar": "المطابقة"
+ },
+ "pack.approvalsSheet": {
+  "en": "Approvals",
+  "ar": "الموافقات"
+ },
+ "pack.conclusion": {
+  "en": "Conclusion",
+  "ar": "النتيجة"
+ },
+ "pack.conclusion.RECONCILED": {
+  "en": "RECONCILED",
+  "ar": "تمت المطابقة"
+ },
+ "pack.conclusion.RECONCILED_WITH_WAIVERS": {
+  "en": "RECONCILED WITH WAIVERS",
+  "ar": "تمت المطابقة مع تنازلات"
+ },
+ "pack.conclusion.NOT_RECONCILED": {
+  "en": "NOT RECONCILED",
+  "ar": "لم تتم المطابقة"
+ },
+ "pack.check": {
+  "en": "Check",
+  "ar": "الفحص"
+ },
+ "pack.sets": {
+  "en": "Sets",
+  "ar": "المجموعات"
+ },
+ "pack.severity": {
+  "en": "Severity",
+  "ar": "الشدة"
+ },
+ "pack.open": {
+  "en": "Open",
+  "ar": "مفتوح"
+ },
+ "pack.resolved": {
+  "en": "Resolved",
+  "ar": "تم الحل"
+ },
+ "pack.waived": {
+  "en": "Waived",
+  "ar": "تم التنازل"
+ },
+ "pack.severity.BLOCKING": {
+  "en": "Blocking",
+  "ar": "مانع"
+ },
+ "pack.severity.WARNING": {
+  "en": "Warning",
+  "ar": "تحذير"
+ },
+ "pack.taxPeriod": {
+  "en": "Tax period",
+  "ar": "الفترة الضريبية"
+ },
+ "pack.returnVersion": {
+  "en": "Return version",
+  "ar": "نسخة الإقرار"
+ },
+ "pack.form": {
+  "en": "Form",
+  "ar": "النموذج"
+ },
+ "pack.rulePack": {
+  "en": "Rule pack",
+  "ar": "حزمة القواعد"
+ },
+ "pack.valuesHeading": {
+  "en": "VAT201 values and how to enter them",
+  "ar": "قيم الإقرار VAT201 وطريقة إدخالها"
+ },
+ "pack.certificate": {
+  "en": "Reconciliation certificate",
+  "ar": "شهادة المطابقة"
+ },
+ "pack.corner5": {
+  "en": "E-invoices issued in the period: {issued}, reported to the FTA: {reported}, not reported: {notReported}, rejected: {rejected}.",
+  "ar": "الفواتير الإلكترونية الصادرة في الفترة: {issued}، المبلَّغة للهيئة: {reported}، غير المبلَّغة: {notReported}، المرفوضة: {rejected}."
+ },
+ "pack.corner5Vat": {
+  "en": "VAT per reported e-invoices: AED {einvoice}; matched ERP VAT: AED {erp}; variance: AED {variance}.",
+  "ar": "الضريبة حسب الفواتير المبلَّغة: {einvoice} درهم؛ ضريبة النظام المطابقة: {erp} درهم؛ الفرق: {variance} درهم."
+ },
+ "pack.proves": {
+  "en": "What it proves",
+  "ar": "ما يثبته"
+ },
+ "pack.waivers": {
+  "en": "Waivers",
+  "ar": "التنازلات"
+ },
+ "pack.issue": {
+  "en": "Issue",
+  "ar": "المشكلة"
+ },
+ "pack.reason": {
+  "en": "Reason",
+  "ar": "السبب"
+ },
+ "pack.waivedAt": {
+  "en": "Waived at",
+  "ar": "تاريخ التنازل"
+ },
+ "pack.approvals": {
+  "en": "Approvals",
+  "ar": "الموافقات"
+ },
+ "pack.stepHeading": {
+  "en": "Step",
+  "ar": "الخطوة"
+ },
+ "pack.name": {
+  "en": "Name",
+  "ar": "الاسم"
+ },
+ "pack.email": {
+  "en": "Email",
+  "ar": "البريد الإلكتروني"
+ },
+ "pack.signedAt": {
+  "en": "Signed at",
+  "ar": "تاريخ التوقيع"
+ },
+ "pack.note": {
+  "en": "Note",
+  "ar": "ملاحظة"
+ },
+ "pack.step.PREPARED": {
+  "en": "PREPARED",
+  "ar": "الإعداد"
+ },
+ "pack.step.REVIEWED": {
+  "en": "REVIEWED",
+  "ar": "المراجعة"
+ },
+ "pack.step.PARTNER": {
+  "en": "PARTNER",
+  "ar": "الشريك"
+ },
+ "pack.step.APPROVED": {
+  "en": "APPROVED",
+  "ar": "الاعتماد"
+ },
+ "pack.esignature": {
+  "en": "Client e-signature",
+  "ar": "التوقيع الإلكتروني للعميل"
+ },
+ "pack.integrity": {
+  "en": "Integrity",
+  "ar": "السلامة"
+ },
+ "pack.valuesHash": {
+  "en": "Return values hash",
+  "ar": "بصمة قيم الإقرار"
+ },
+ "pack.auditHead": {
+  "en": "Audit chain head when this pack was made",
+  "ar": "رأس سلسلة التدقيق عند إعداد هذه الحزمة"
+ },
+ "pack.marginIndicator": {
+  "en": "Profit margin scheme applied in this period",
+  "ar": "تطبيق نظام هامش الربح في هذه الفترة"
+ },
+ "pack.marginSchedule": {
+  "en": "Profit margin scheme schedule",
+  "ar": "جدول نظام هامش الربح"
+ },
+ "pack.marginCategory": {
+  "en": "Category",
+  "ar": "الفئة"
+ },
+ "pack.marginPurchase": {
+  "en": "Purchase cost (AED)",
+  "ar": "تكلفة الشراء (درهم)"
+ },
+ "pack.marginSelling": {
+  "en": "Selling price (AED)",
+  "ar": "سعر البيع (درهم)"
+ },
+ "pack.marginMargin": {
+  "en": "Margin (AED)",
+  "ar": "الهامش (درهم)"
+ },
+ "form211.title": {
+  "en": "Voluntary disclosure (Form 211) pack",
+  "ar": "حزمة الإفصاح الطوعي (النموذج 211)"
+ },
+ "form211.error": {
+  "en": "The error",
+  "ar": "الخطأ"
+ },
+ "form211.discovered": {
+  "en": "Discovered on",
+  "ar": "تاريخ الاكتشاف"
+ },
+ "form211.dueBy": {
+  "en": "Disclosure due by",
+  "ar": "موعد الإفصاح"
+ },
+ "form211.reason": {
+  "en": "Correction reason",
+  "ar": "سبب التصحيح"
+ },
+ "form211.figures": {
+  "en": "Original and corrected figures",
+  "ar": "القيم الأصلية والمصححة"
+ },
+ "form211.vatFiled": {
+  "en": "VAT filed (AED)",
+  "ar": "الضريبة المقدمة (درهم)"
+ },
+ "form211.vatCorrected": {
+  "en": "VAT corrected (AED)",
+  "ar": "الضريبة المصححة (درهم)"
+ },
+ "form211.vatDifference": {
+  "en": "Difference (AED)",
+  "ar": "الفرق (درهم)"
+ },
+ "form211.taxDifference": {
+  "en": "Tax difference",
+  "ar": "الفرق الضريبي"
+ },
+ "form211.status": {
+  "en": "Status of this disclosure",
+  "ar": "حالة هذا الإفصاح"
+ },
+ "form211.state.DRAFT": {
+  "en": "Draft: not yet approved",
+  "ar": "مسودة: لم يُعتمد بعد"
+ },
+ "form211.state.APPROVED": {
+  "en": "Approved: not yet submitted",
+  "ar": "معتمد: لم يُقدَّم بعد"
+ },
+ "form211.state.SUBMITTED": {
+  "en": "Submitted on EmaraTax",
+  "ar": "مقدَّم على إمارات تاكس"
+ },
+ "form211.state.SETTLED": {
+  "en": "Settled",
+  "ar": "تمت التسوية"
+ },
+ "penalty.title": {
+  "en": "Penalty exposure (estimate)",
+  "ar": "التعرض للغرامات (تقدير)"
+ },
+ "penalty.noSchedule": {
+  "en": "No penalty schedule covers this date, so no estimate can be given. Ask the tax team.",
+  "ar": "لا يوجد جدول غرامات يغطي هذا التاريخ، لذا لا يمكن تقديم تقدير. راجع فريق الضرائب."
+ },
+ "penalty.estimateNote": {
+  "en": "Estimate as of {date} under {source}. The FTA decides what is charged.",
+  "ar": "تقدير حتى {date} وفق {source}. الهيئة هي من تحدد ما يُفرض."
+ },
+ "penalty.months": {
+  "en": "Months",
+  "ar": "الأشهر"
+ },
+ "penalty.LATE_FILING": {
+  "en": "Late filing of the return",
+  "ar": "التأخر في تقديم الإقرار"
+ },
+ "penalty.LATE_FILING_REPEAT": {
+  "en": "Late filing, repeated within the window",
+  "ar": "التأخر في تقديم الإقرار، متكرر خلال المدة"
+ },
+ "penalty.LATE_PAYMENT": {
+  "en": "Late payment of tax",
+  "ar": "التأخر في سداد الضريبة"
+ },
+ "penalty.INCORRECT_RETURN": {
+  "en": "Incorrect return",
+  "ar": "إقرار غير صحيح"
+ },
+ "penalty.VOLUNTARY_DISCLOSURE": {
+  "en": "Voluntary disclosure, monthly on the tax difference",
+  "ar": "إفصاح طوعي، شهريًا على الفرق الضريبي"
+ },
+ "penalty.UNDISCLOSED_BEFORE_AUDIT": {
+  "en": "Not disclosed before audit notice",
+  "ar": "عدم الإفصاح قبل إشعار التدقيق"
+ },
+ "refund.title": {
+  "en": "VAT refund request pack",
+  "ar": "حزمة طلب استرداد الضريبة"
+ },
+ "refund.position": {
+  "en": "Refund position",
+  "ar": "موقف الاسترداد"
+ },
+ "refund.claimed": {
+  "en": "Amount claimed (AED)",
+  "ar": "المبلغ المطالب به (درهم)"
+ },
+ "refund.timeLimit": {
+  "en": "Time limit for this claim",
+  "ar": "المهلة الزمنية لهذه المطالبة"
+ },
+ "refund.transitional": {
+  "en": "Claimed under the transitional window",
+  "ar": "مطالبة ضمن الفترة الانتقالية"
+ },
+ "refund.supporting": {
+  "en": "Largest supporting input invoices ({count})",
+  "ar": "أكبر فواتير المدخلات المؤيدة ({count})"
+ },
+ "refund.recoverable": {
+  "en": "Recoverable VAT (AED)",
+  "ar": "الضريبة القابلة للاسترداد (درهم)"
+ },
+ "refund.entry": {
+  "en": "The agent submits this on EmaraTax and records the reference here. Bank details are entered on EmaraTax.",
+  "ar": "يقدم الوكيل هذا الطلب على إمارات تاكس ويسجل المرجع هنا. تُدخل البيانات المصرفية على إمارات تاكس."
+ },
+ "notify.deadline.title": {
+  "en": "{entity}: VAT {task} due in {days} days",
+  "ar": "{entity}: {task} ضريبة القيمة المضافة مستحق خلال {days} يوم"
+ },
+ "notify.deadline.overdue": {
+  "en": "{entity}: VAT {task} is overdue",
+  "ar": "{entity}: {task} ضريبة القيمة المضافة متأخر"
+ },
+ "notify.deadline.body": {
+  "en": "VAT {task} for the period ending {end} is due on {due}. Current state: {state}.",
+  "ar": "{task} ضريبة القيمة المضافة للفترة المنتهية في {end} مستحق في {due}. الحالة الحالية: {state}."
+ },
+ "notify.task.return": {
+  "en": "return",
+  "ar": "إقرار"
+ },
+ "notify.task.payment": {
+  "en": "payment",
+  "ar": "سداد"
+ },
+ "notify.auditRequest.title": {
+  "en": "{entity}: FTA audit request due {due}",
+  "ar": "{entity}: طلب تدقيق الهيئة مستحق في {due}"
+ },
+ "notify.auditRequest.body": {
+  "en": "Case {reference}: {description}. Respond by {due}.",
+  "ar": "القضية {reference}: {description}. يرجى الرد قبل {due}."
+ },
+ "notify.registration.title": {
+  "en": "{name}: VAT registration threshold",
+  "ar": "{name}: حد التسجيل في ضريبة القيمة المضافة"
+ },
+ "notify.registration.body": {
+  "en": "Rolling 12-month taxable supplies are AED {total}. Status: {status}.",
+  "ar": "التوريدات الخاضعة خلال 12 شهرًا: {total} درهم. الحالة: {status}."
+ },
+ "rule.R01": {
+  "en": "Sales invoice has an e-invoice reported to the FTA",
+  "ar": "فاتورة المبيعات لها فاتورة إلكترونية مُبلَّغة للهيئة"
+ },
+ "rule.R02": {
+  "en": "Issued e-invoice is in the ERP in the same period",
+  "ar": "الفاتورة الإلكترونية الصادرة مسجلة في نفس الفترة"
+ },
+ "rule.R03": {
+  "en": "Net and VAT match between e-invoice and ERP",
+  "ar": "تطابق الصافي والضريبة بين الفاتورة الإلكترونية والنظام"
+ },
+ "rule.R04": {
+  "en": "Received e-invoice is not in AP",
+  "ar": "الفاتورة الإلكترونية المستلمة غير مسجلة في المشتريات"
+ },
+ "rule.R05": {
+  "en": "Input VAT claimed without a valid invoice",
+  "ar": "مطالبة بضريبة مدخلات دون فاتورة صالحة"
+ },
+ "rule.R06": {
+  "en": "GL control balances equal the return",
+  "ar": "أرصدة حسابات المراقبة تساوي الإقرار"
+ },
+ "rule.R07": {
+  "en": "Box 6 equals customs declarations",
+  "ar": "الخانة 6 تساوي البيانات الجمركية"
+ },
+ "rule.R08": {
+  "en": "Supplier TRN valid and active",
+  "ar": "رقم تسجيل المورد صالح ونشط"
+ },
+ "rule.R09": {
+  "en": "Credit or debit note refers to an original invoice",
+  "ar": "إشعار دائن أو مدين يشير إلى فاتورة أصلية"
+ },
+ "rule.R10": {
+  "en": "Duplicate invoice number",
+  "ar": "رقم فاتورة مكرر"
+ },
+ "rule.R11": {
+  "en": "Unpaid six months and not yet reversed",
+  "ar": "غير مسددة ستة أشهر ولم تُعكس بعد"
+ },
+ "rule.R12": {
+  "en": "Posted outside the period of its tax point",
+  "ar": "مرحّلة خارج فترة تاريخ الاستحقاق"
+ },
+ "rule.R13": {
+  "en": "Emirate split equals total standard-rated supplies",
+  "ar": "توزيع الإمارات يساوي إجمالي التوريدات الأساسية"
+ },
+ "rule.R14": {
+  "en": "Large swing in a box with no comment",
+  "ar": "تغير كبير في خانة دون تعليق"
+ },
+ "rule.D01": {
+  "en": "Rows held for a missing FX rate",
+  "ar": "صفوف معلقة لغياب سعر الصرف"
+ },
+ "rule.D02": {
+  "en": "Rows rejected at load",
+  "ar": "صفوف مرفوضة عند التحميل"
+ },
+ "rule.D03": {
+  "en": "Lines with no VAT treatment",
+  "ar": "بنود دون معالجة ضريبية"
+ },
+ "rule.D04": {
+  "en": "A locked period has changes to correct",
+  "ar": "فترة مقفلة بها تغييرات تحتاج تصحيحًا"
+ },
+ "rule.T01": {
+  "en": "Tax code and place of supply disagree",
+  "ar": "تعارض الرمز الضريبي ومكان التوريد"
+ },
+ "rule.T02": {
+  "en": "Possible domestic reverse charge",
+  "ar": "احتساب عكسي محلي محتمل"
+ },
+ "rule.T03": {
+  "en": "Input VAT blocked from the description",
+  "ar": "حظر ضريبة المدخلات من الوصف"
+ },
+ "rule.T04": {
+  "en": "VAT does not match the expected rate",
+  "ar": "الضريبة لا تطابق النسبة المتوقعة"
+ },
+ "rule.T05": {
+  "en": "Seller-side reverse charge: box to confirm",
+  "ar": "احتساب عكسي للبائع: الخانة بحاجة لتأكيد"
+ },
+ "rule.T06": {
+  "en": "Check against customs",
+  "ar": "التحقق مقابل الجمارك"
+ }
+}

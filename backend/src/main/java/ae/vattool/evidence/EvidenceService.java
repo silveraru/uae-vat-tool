@@ -35,7 +35,8 @@ public class EvidenceService {
 
     private static final int STANDARD_YEARS = 5;
     private static final int REAL_ESTATE_YEARS = 15;
-    private static final Set<String> LINKABLE = Set.of("PERIOD", "BOX", "LINE", "EXCEPTION", "ADJUSTMENT", "CORRECTION", "FILING", "PAYMENT");
+    private static final Set<String> LINKABLE = Set.of("PERIOD", "BOX", "LINE", "EXCEPTION", "ADJUSTMENT", "CORRECTION", "FILING", "PAYMENT",
+            "DOCUMENT", "DISCLOSURE", "REFUND", "AUDIT_CASE", "AUDIT_REQUEST", "ASSET", "BAD_DEBT");
 
     private final JdbcClient jdbc;
     private final VaultStorage vault;

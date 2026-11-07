@@ -8,6 +8,14 @@ import { NewEntityPage } from "../pages/NewEntityPage";
 import { EntityPage } from "../pages/EntityPage";
 import { RulePacksPage } from "../pages/RulePacksPage";
 import { AuditPage } from "../pages/AuditPage";
+import { AnalyticsPage } from "../pages/AnalyticsPage";
+import { AuditCasesPage } from "../pages/AuditCasesPage";
+import { AuditCasePage } from "../pages/AuditCasePage";
+import { PracticePage } from "../pages/PracticePage";
+import { SuggestionsTab } from "../pages/period/SuggestionsTab";
+import { SchemesTab } from "../pages/period/SchemesTab";
+import { ExportsTab } from "../pages/period/ExportsTab";
+import { RefundTab } from "../pages/period/RefundTab";
 import { PeriodLayout } from "../pages/period/PeriodLayout";
 import { ReturnTab } from "../pages/period/ReturnTab";
 import { DataTab } from "../pages/period/DataTab";
@@ -36,12 +44,20 @@ export function App() {
             <Route path="/entities/:id" element={<EntityPage />} />
             <Route path="/rule-packs" element={<RulePacksPage />} />
             <Route path="/audit" element={<AuditPage />} />
+            <Route path="/practice" element={<PracticePage />} />
+            <Route path="/entities/:id/analytics" element={<AnalyticsPage />} />
+            <Route path="/entities/:id/audit-cases" element={<AuditCasesPage />} />
+            <Route path="/audit-cases/:id" element={<AuditCasePage />} />
             <Route path="/periods/:id" element={<PeriodLayout />}>
               <Route index element={<ReturnTab />} />
               <Route path="data" element={<DataTab />} />
               <Route path="exceptions" element={<ExceptionsTab />} />
               <Route path="lines" element={<LinesTab />} />
+              <Route path="suggestions" element={<SuggestionsTab />} />
               <Route path="adjustments" element={<AdjustmentsTab />} />
+              <Route path="schemes" element={<SchemesTab />} />
+              <Route path="exports" element={<ExportsTab />} />
+              <Route path="refund" element={<RefundTab />} />
               <Route path="review" element={<ReviewTab />} />
               <Route path="filing" element={<FilingTab />} />
               <Route path="evidence" element={<EvidenceTab />} />

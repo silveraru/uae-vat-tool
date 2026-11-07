@@ -17,7 +17,7 @@ class RulePackParserTest {
     void theBundledPackIsValidAndHasEveryVat201Box() throws Exception {
         RulePackDefinition pack = RulePackParser.parse(bundled());
 
-        assertThat(pack.version()).isEqualTo("AE-VAT-1.0");
+        assertThat(pack.version()).isEqualTo("AE-VAT-1.1");
         assertThat(pack.form().boxes()).extracting(RulePackDefinition.Box::code).containsExactly(
                 "1a", "1b", "1c", "1d", "1e", "1f", "1g", "2", "3", "4", "5", "6", "7", "8",
                 "9", "10", "11", "12", "13", "14");

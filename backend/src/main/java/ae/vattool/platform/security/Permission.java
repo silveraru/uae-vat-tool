@@ -15,5 +15,7 @@ public enum Permission {
     COMMENT,
     UPLOAD_EVIDENCE,
     MANAGE_RULES,
+    MANAGE_AUDIT,
+    MANAGE_PRACTICE,
     ADMINISTER
 }

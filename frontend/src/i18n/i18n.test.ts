@@ -10,6 +10,7 @@ function keys(obj: object, prefix = ""): string[] {
 }
 
 const sources = import.meta.glob("../**/*.tsx", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+const serverSources = import.meta.glob("../../../backend/src/main/java/**/*.java", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
 /** i18next plural keys are stored with a suffix, so strip it when comparing with the code. */
 function withoutPlural(key: string) {
@@ -41,6 +42,17 @@ describe("localisation", () => {
       }
     }
     expect(missing).toEqual([]);
+  });
+
+  it("has an Arabic message for every error code the server can send", () => {
+    const codes = new Set<string>();
+    for (const text of Object.values(serverSources)) {
+      for (const m of text.matchAll(/DomainException\.(?:invalid|conflict)\(\s*"([A-Z0-9_]+)"/g)) codes.add(m[1]);
+      for (const m of text.matchAll(/new DomainException\([^,]*,\s*"([A-Z0-9_]+)"/g)) codes.add(m[1]);
+    }
+    expect(codes.size).toBeGreaterThan(100);
+    const translated = (ar as { errors: Record<string, string> }).errors;
+    expect([...codes].filter((c) => !translated[c])).toEqual([]);
   });
 
   it("switches the document to right-to-left for Arabic and back", async () => {

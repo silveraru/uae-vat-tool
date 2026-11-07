@@ -1,5 +1,6 @@
 package ae.vattool.workflow;
 
+import ae.vattool.platform.notify.Notifier;
 import ae.vattool.platform.tenancy.RequestContext;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
@@ -9,12 +10,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -26,8 +23,6 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @Component
 public class DeadlineAlertJob {
-    private static final Logger log = LoggerFactory.getLogger(DeadlineAlertJob.class);
-
     /** Tier in days before the due date, most urgent first, with the roles that hear about it. */
     private static final Map<Integer, List<String>> RECIPIENTS = Map.of(
             0, List.of("PREPARER", "TAX_REVIEWER", "ENGAGEMENT_PARTNER", "APPROVER", "FIRM_ADMIN"),
@@ -38,17 +33,17 @@ public class DeadlineAlertJob {
 
     private final JdbcClient jdbc;
     private final TransactionTemplate tx;
-    private final JavaMailSender mail;
+    private final Notifier notifier;
     private final MeterRegistry metrics;
     // Deadlines are UAE calendar days, wherever the server runs.
     private final Clock clock = Clock.system(ZoneId.of("Asia/Dubai"));
     private final boolean enabled;
 
-    public DeadlineAlertJob(JdbcClient jdbc, TransactionTemplate tx, JavaMailSender mail, MeterRegistry metrics,
+    public DeadlineAlertJob(JdbcClient jdbc, TransactionTemplate tx, Notifier notifier, MeterRegistry metrics,
                             @Value("${app.worker.enabled}") boolean enabled) {
         this.jdbc = jdbc;
         this.tx = tx;
-        this.mail = mail;
+        this.notifier = notifier;
         this.metrics = metrics;
         this.enabled = enabled;
     }
@@ -67,8 +62,6 @@ public class DeadlineAlertJob {
     }
 
     private record Due(UUID id, UUID entityId, String legalName, LocalDate periodEnd, LocalDate dueDate, String state) {}
-
-    private record Recipient(UUID id, String email, String displayName) {}
 
     /** Sends what is due on the given day for the tenant in context. Returns how many notices went out. */
     public int run(LocalDate today) {
@@ -114,44 +107,12 @@ public class DeadlineAlertJob {
                         .params(RequestContext.requireTenant(), p.id(), later).update();
             }
         }
-        String task = "FILED".equals(p.state()) ? "payment" : "return";
-        String title = daysLeft < 0
-                ? p.legalName() + ": VAT " + task + " is overdue"
-                : p.legalName() + ": VAT " + task + " due in " + daysLeft + " days";
-        String body = "VAT " + task + " for the period ending " + p.periodEnd() + " is due on " + p.dueDate()
-                + ". Current state: " + p.state() + ".";
-        List<Recipient> people = jdbc.sql("""
-                SELECT DISTINCT u.id, u.email, u.display_name FROM app_user u
-                JOIN entity_grant g ON g.user_id = u.id
-                WHERE u.active AND (g.entity_id = :entity OR g.entity_id IS NULL) AND g.role IN (:roles)
-                  AND g.valid_from <= now() AND (g.valid_to IS NULL OR g.valid_to > now())
-                """).param("entity", p.entityId()).param("roles", RECIPIENTS.get(tier)).query(Recipient.class).list();
-        for (Recipient r : people) {
-            jdbc.sql("""
-                    INSERT INTO notification (id, tenant_id, user_id, entity_id, period_id, kind, title, body)
-                    VALUES (:id, :tenant, :user, :entity, :period, :kind, :title, :body)
-                    """)
-                    .param("id", UUID.randomUUID()).param("tenant", RequestContext.requireTenant()).param("user", r.id())
-                    .param("entity", p.entityId()).param("period", p.id()).param("kind", "DEADLINE_T" + tier)
-                    .param("title", title).param("body", body)
-                    .update();
-            sendMail(r, title, body);
-        }
-        metrics.counter("vat.deadline.alerts", "tier", String.valueOf(tier)).increment(people.size());
-        return people.size();
-    }
-
-    private void sendMail(Recipient r, String title, String body) {
-        try {
-            SimpleMailMessage m = new SimpleMailMessage();
-            m.setTo(r.email());
-            m.setFrom("no-reply@vat-tool.local");
-            m.setSubject(title);
-            m.setText(body);
-            mail.send(m);
-        } catch (RuntimeException e) {
-            metrics.counter("vat.deadline.mail_failed").increment();
-            log.warn("Could not send a deadline email to {}: {}", r.id(), e.getMessage());
-        }
+        String task = "notify.task." + ("FILED".equals(p.state()) ? "payment" : "return");
+        // Each person reads this in their own language, so the task word is resolved per language below.
+        int people = notifier.toRoles(p.entityId(), p.id(), "DEADLINE_T" + tier, RECIPIENTS.get(tier),
+                daysLeft < 0 ? "notify.deadline.overdue" : "notify.deadline.title", "notify.deadline.body",
+                "entity", p.legalName(), "task", new ae.vattool.platform.notify.Notifier.Text(task), "days", daysLeft, "end", p.periodEnd(), "due", p.dueDate(), "state", p.state());
+        metrics.counter("vat.deadline.alerts", "tier", String.valueOf(tier)).increment(people);
+        return people;
     }
 }

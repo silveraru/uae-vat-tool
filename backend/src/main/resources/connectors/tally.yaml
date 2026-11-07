@@ -1,0 +1,25 @@
+# TallyPrime is usually reached through its own export rather than an API.
+system: TALLY
+label: TallyPrime (export)
+status: UNVERIFIED
+transport: FILE
+note: Export the sales or purchase register to Excel with these columns. Tally's column names vary with your report configuration.
+kinds:
+  AR:
+    constants: { doc_type: TAX_INVOICE }
+    fields:
+      doc_number: voucher_no.
+      doc_date: date
+      net_amount: taxable_value
+      vat_amount: vat_amount
+      counterparty_trn: trn
+      counterparty_name: particulars
+  AP:
+    constants: { doc_type: TAX_INVOICE, has_tax_invoice: "true" }
+    fields:
+      doc_number: voucher_no.
+      doc_date: date
+      net_amount: taxable_value
+      vat_amount: vat_amount
+      counterparty_trn: trn
+      counterparty_name: particulars

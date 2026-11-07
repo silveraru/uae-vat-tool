@@ -17,6 +17,7 @@ export function Layout() {
         <nav aria-label={t("nav.main")}>
           <NavLink to="/" end>{t("nav.portfolio")}</NavLink>
           <NavLink to="/deadlines">{t("nav.deadlines")}</NavLink>
+          {roles.canManagePractice && <NavLink to="/practice">{t("nav.practice")}</NavLink>}
           {roles.isAdmin && <NavLink to="/rule-packs">{t("nav.rulePacks")}</NavLink>}
           {roles.isAdmin && <NavLink to="/audit">{t("nav.audit")}</NavLink>}
         </nav>

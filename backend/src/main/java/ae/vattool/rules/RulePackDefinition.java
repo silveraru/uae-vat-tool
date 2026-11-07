@@ -19,7 +19,69 @@ public record RulePackDefinition(
         Rates rates,
         Classification classification,
         Reconciliation reconciliation,
-        Form form) {
+        Form form,
+        List<PenaltySchedule> penalties,
+        Disclosure disclosure,
+        Refund refund,
+        Apportionment apportionment,
+        CapitalAssets capitalAssets,
+        BadDebt badDebt,
+        MarginScheme marginScheme,
+        ZeroRating zeroRating,
+        Registration registration,
+        Analytics analytics,
+        Suggestions suggestions,
+        Faf faf) {
+
+    /** Sections added after 1.0 are absent from older packs, so a flow that needs one asks for it here. */
+    public static <T> T require(T section, String name) {
+        if (section == null) {
+            throw ae.vattool.platform.web.DomainException.conflict("RULE_PACK_SECTION_MISSING",
+                    "The rule pack in force has no " + name + " section. Install rule pack AE-VAT 1.1 or later.");
+        }
+        return section;
+    }
+
+    public record PenaltySchedule(LocalDate effectiveFrom, String source, BigDecimal lateFilingFirstAed, BigDecimal lateFilingRepeatAed,
+                                  int lateFilingRepeatWindowMonths, BigDecimal latePaymentAnnualPct, BigDecimal incorrectReturnAed,
+                                  BigDecimal disclosureMonthlyPct, BigDecimal afterAuditFixedPct, BigDecimal afterAuditMonthlyPct,
+                                  BigDecimal capPctOfTax) {}
+
+    public record Disclosure(String form, int deadlineBusinessDays) {}
+
+    public record Refund(String form, int timeLimitYears, LocalDate transitionalDeadline) {}
+
+    public record Apportionment(List<ApportionmentMethod> methods, boolean roundToWholePct, BigDecimal furtherAdjustmentThresholdAed, String adjustmentBox) {
+        /** The method in force for a tax year, by the day that year starts. */
+        public String methodFor(LocalDate taxYearStart) {
+            return methods.stream().filter(m -> !m.fromTaxYearStarting().isAfter(taxYearStart))
+                    .max(java.util.Comparator.comparing(ApportionmentMethod::fromTaxYearStarting))
+                    .map(ApportionmentMethod::method)
+                    .orElseThrow(() -> ae.vattool.platform.web.DomainException.conflict("NO_APPORTIONMENT_METHOD",
+                            "The rule pack has no apportionment method for a tax year starting " + taxYearStart));
+        }
+    }
+
+    public record ApportionmentMethod(String method, LocalDate fromTaxYearStarting) {}
+
+    public record CapitalAssets(BigDecimal thresholdAed, int realEstateYears, int otherYears, String adjustmentBox) {}
+
+    public record BadDebt(int minMonthsSinceSupply) {}
+
+    public record MarginScheme(List<String> eligibleCategories) {}
+
+    public record ZeroRating(int exportDays) {}
+
+    public record Registration(BigDecimal mandatoryAed, BigDecimal voluntaryAed, int rollingMonths, BigDecimal approachingPct) {}
+
+    public record Analytics(BigDecimal newSupplierNetAed, BigDecimal zeroRatedGrowthMultiple, BigDecimal zeroRatedMinAed, int trailingPeriods) {}
+
+    public record Suggestions(String engineVersion, int historyMinLines, List<SuggestionKeyword> keywords) {}
+
+    public record SuggestionKeyword(String pattern, String treatment, BigDecimal confidence, String reason) {}
+
+    public record Faf(String version, String dateFormat, Map<String, List<String>> markers, Map<String, String> taxCodes,
+                      String outputAmendmentCode, String inputAmendmentCode) {}
 
     /** Tolerances, and which boxes each GL control account type is compared with (check R06). */
     public record Reconciliation(

@@ -37,7 +37,11 @@ public final class RuleCatalog {
             new Rule("T03", "WARNING", "Tax", "Input VAT blocked from the description: confirm"),
             new Rule("T04", "WARNING", "Tax", "VAT does not match the expected rate"),
             new Rule("T05", "WARNING", "Tax", "Seller-side domestic reverse charge: VAT201 box to be confirmed by the tax team"),
-            new Rule("T06", "WARNING", "Tax", "Goods from abroad or a designated zone: check against customs"));
+            new Rule("T06", "WARNING", "Tax", "Goods from abroad or a designated zone: check against customs"),
+            new Rule("T07", "WARNING", "Tax", "Zero-rated export without complete official and commercial evidence"),
+            new Rule("T08", "BLOCKING", "Tax", "Zero-rated goods not shown as exported within the time limit"),
+            new Rule("T09", "WARNING", "Tax", "Exempt supplies in the period and residual input tax not apportioned"),
+            new Rule("T10", "WARNING", "Tax", "A capital asset adjustment is due in this return"));
 
     public static final Map<String, Rule> BY_ID = RULES.stream().collect(Collectors.toMap(Rule::id, Function.identity()));
 

@@ -627,7 +627,7 @@ class FilingAndAdjustmentTest extends IntegrationTest {
     @Test
     void aNewRulePackChangesTheFormWithNoCodeRelease() throws Exception {
         String yaml = new org.springframework.core.io.ClassPathResource("rulepacks/ae-vat/v1/ae-vat-v1.yaml").getContentAsString(java.nio.charset.StandardCharsets.UTF_8)
-                .replace("version: \"AE-VAT-1.0\"", "version: \"AE-VAT-2.0\"")
+                .replace("version: \"AE-VAT-1.1\"", "version: \"AE-VAT-2.0\"")
                 .replace("effectiveFrom: 2018-01-01", "effectiveFrom: 2027-03-01")
                 .replace("label: { en: \"Standard rated supplies in Dubai\"", "label: { en: \"Standard rated supplies, Dubai (new form)\"")
                 // The new form moves exempt supplies out of the output total.

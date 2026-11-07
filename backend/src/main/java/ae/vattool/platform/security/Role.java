@@ -10,11 +10,11 @@ public enum Role {
     APPROVER(EnumSet.of(Permission.VIEW, Permission.APPROVE_AND_LOCK, Permission.COMMENT,
             Permission.RECORD_FILING)),
     TAX_REVIEWER(EnumSet.of(Permission.VIEW, Permission.EDIT_ADJUSTMENTS, Permission.REVIEW_SIGNOFF,
-            Permission.COMMENT, Permission.UPLOAD_EVIDENCE, Permission.RECORD_FILING)),
+            Permission.COMMENT, Permission.UPLOAD_EVIDENCE, Permission.RECORD_FILING, Permission.MANAGE_AUDIT)),
     ENGAGEMENT_PARTNER(EnumSet.of(Permission.VIEW, Permission.PARTNER_SIGNOFF, Permission.COMMENT,
-            Permission.VIEW_PORTFOLIO)),
+            Permission.VIEW_PORTFOLIO, Permission.MANAGE_AUDIT, Permission.MANAGE_PRACTICE)),
     FIRM_ADMIN(EnumSet.of(Permission.VIEW, Permission.ADMINISTER, Permission.MANAGE_RULES,
-            Permission.VIEW_PORTFOLIO, Permission.VIEW_AUDIT_LOG)),
+            Permission.VIEW_PORTFOLIO, Permission.VIEW_AUDIT_LOG, Permission.MANAGE_AUDIT, Permission.MANAGE_PRACTICE)),
     AUDITOR(EnumSet.of(Permission.VIEW_LOCKED_ONLY));
 
     private final Set<Permission> permissions;

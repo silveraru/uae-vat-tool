@@ -37,7 +37,7 @@ public class EntityController {
     }
 
     public record SettingsInput(BigDecimal defaultRecoveryPct, BigDecimal partnerThresholdAed, Boolean requireReviewer,
-                                LocalDate einvoiceGoLive) {}
+                                LocalDate einvoiceGoLive, String ftaGiban, Boolean requireEsignature, Integer taxYearStartMonth) {}
 
     public record MappingInput(LocalDate effectiveFrom, String note, List<MappingService.EntryInput> entries) {}
 
@@ -62,7 +62,8 @@ public class EntityController {
     @PutMapping("/entities/{id}/settings")
     public LegalEntity settings(@PathVariable UUID id, @RequestBody SettingsInput in) {
         access.require(id, Permission.ADMINISTER);
-        return entities.updateSettings(id, in.defaultRecoveryPct(), in.partnerThresholdAed(), in.requireReviewer(), in.einvoiceGoLive());
+        return entities.updateSettings(id, in.defaultRecoveryPct(), in.partnerThresholdAed(), in.requireReviewer(), in.einvoiceGoLive(),
+                in.ftaGiban(), in.requireEsignature(), in.taxYearStartMonth());
     }
 
     @GetMapping("/entities/{id}/members")

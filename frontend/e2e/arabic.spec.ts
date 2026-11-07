@@ -2,14 +2,15 @@ import { expect, test, type Page } from "@playwright/test";
 import { as, csvFile } from "./helpers";
 
 const TABS: [string, string][] = [
-  ["", "الإقرار"], ["/data", "البيانات"], ["/exceptions", "الاستثناءات"], ["/lines", "البنود"], ["/adjustments", "التسويات"],
-  ["/review", "المراجعة والاعتماد"], ["/filing", "التقديم والدفع"], ["/evidence", "المستندات"], ["/corrections", "التصحيحات"],
+  ["", "الإقرار"], ["/data", "البيانات"], ["/exceptions", "الاستثناءات"], ["/lines", "البنود"], ["/suggestions", "الاقتراحات"], ["/adjustments", "التسويات"],
+  ["/schemes", "الأنظمة الخاصة"], ["/exports", "الصادرات والهامش"], ["/review", "المراجعة والاعتماد"], ["/filing", "التقديم والدفع"], ["/refund", "الاسترداد"],
+  ["/evidence", "المستندات"], ["/corrections", "التصحيحات"],
 ];
 
 /** A translation key shown as text means a screen is missing a translation. */
 async function assertNoRawKeys(page: Page, where: string) {
   const text = await page.locator("main").innerText();
-  const raw = text.match(/\b(common|portfolio|deadlines|entity|period|return|comments|data|exceptions|lines|review|adjustments|filing|evidence|corrections|rulePacks|audit|state|treatment|role|step)\.[a-zA-Z_.]+\b/g);
+  const raw = text.match(/\b(common|portfolio|deadlines|entity|period|return|comments|data|exceptions|lines|review|adjustments|filing|evidence|corrections|rulePacks|audit|state|treatment|role|step|suggestions|schemes|exports|refund|disclosure|penalty|practice|analytics|auditCases|connectors|esign|documents|errors)\.[a-zA-Z_.]+\b/g);
   expect(raw, `${where} shows untranslated keys`).toBeNull();
 }
 
