@@ -7,14 +7,23 @@ import ae.vattool.returns.ReturnService;
 import ae.vattool.returns.BoxCalculator.BoxValue;
 import ae.vattool.rules.RulePackDefinition;
 import ae.vattool.rules.RulePackStore;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.io.Writer;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
+import javax.sql.DataSource;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,11 +52,17 @@ public class FafService {
                           String sourceDocumentId, String sourceType, BigDecimal debitAed, BigDecimal creditAed, BigDecimal balanceAed) {}
 
     private final JdbcClient jdbc;
+    /** Reads rows a batch at a time inside the transaction, so a large file is never held in memory. */
+    private final JdbcClient cursor;
     private final RulePackStore packs;
     private final GeneratedDocuments documents;
 
-    public FafService(JdbcClient jdbc, RulePackStore packs, GeneratedDocuments documents) {
+    public FafService(JdbcClient jdbc, DataSource dataSource, RulePackStore packs, GeneratedDocuments documents) {
         this.jdbc = jdbc;
+        // Same data source, so it uses the transaction's connection and sees only this tenant's rows.
+        JdbcTemplate streaming = new JdbcTemplate(dataSource);
+        streaming.setFetchSize(2000);
+        this.cursor = JdbcClient.create(streaming);
         this.packs = packs;
         this.documents = documents;
     }
@@ -73,94 +88,133 @@ public class FafService {
                 ORDER BY l.valid_from DESC LIMIT 1
                 """).param("entity", entityId).param("to", to).param("from", from).query(Agent.class).optional().orElse(new Agent(null, null, null, null));
 
-        List<Line> lines = lines(entityId, from, to);
-        List<Ledger> ledger = jdbc.sql("""
+        // Rows go straight to a file as they are read, so an entity with millions of lines needs no more memory than a small one.
+        Path file = createTempFile();
+        try {
+            Totals purchases;
+            Totals supplies;
+            Totals ledger;
+            try (Writer csv = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
+                section(csv, faf, "company", true);
+                row(csv, "TaxablePersonNameEn", "TaxablePersonNameAr", "TRN", "TaxAgencyName", "TAN", "TaxAgentName", "TAAN", "PeriodStart", "PeriodEnd", "FAFCreationDate", "ProductVersion", "FAFVersion");
+                row(csv, str(e.legalName(), 100), str(e.legalNameAr(), 100), str(e.trn(), 15), str(agent.agencyName(), 100), str(agent.tan(), 20), str(agent.agentName(), 100), str(agent.taan(), 20),
+                        from.format(dates), to.format(dates), LocalDate.now().format(dates), PRODUCT_VERSION, faf.version());
+                section(csv, faf, "company", false);
+                purchases = purchases(csv, faf, dates, entityId, from, to);
+                supplies = supplies(csv, faf, dates, entityId, from, to);
+                ledger = ledger(csv, faf, dates, entityId, from, to);
+            }
+
+            List<String> warnings = new ArrayList<>();
+            if (ledger.rows() == 0) {
+                warnings.add("NO_GENERAL_LEDGER");
+            } else if (ledger.first().compareTo(ledger.second()) != 0) {
+                warnings.add("LEDGER_NOT_BALANCED:" + ledger.first().toPlainString() + ":" + ledger.second().toPlainString());
+            }
+            warnings.addAll(checkAgainstReturns(entityId, from, to, supplies.second(), purchases.second()));
+
+            boolean draft = !pack.meta().signedOff();
+            String name = "FAF_" + e.trn() + "_" + from + "_" + to + ".csv";
+            GeneratedDocuments.Doc doc = documents.store(entityId, null, "FAF", objectId, name, "text/csv", file, draft);
+            return new Result(doc, purchases.rows(), supplies.rows(), ledger.rows(), purchases.second(), supplies.second(), warnings);
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        } finally {
+            deleteQuietly(file);
+        }
+    }
+
+    /** Running totals for a table: net and VAT for purchases and supplies, debit and credit for the ledger. */
+    private record Totals(BigDecimal first, BigDecimal second, int rows) {
+        static final Totals NONE = new Totals(BigDecimal.ZERO, BigDecimal.ZERO, 0);
+
+        Totals plus(BigDecimal a, BigDecimal b) {
+            return new Totals(first.add(a), second.add(b), rows + 1);
+        }
+    }
+
+    private Totals purchases(Writer csv, RulePackDefinition.Faf faf, DateTimeFormatter dates, UUID entityId, LocalDate from, LocalDate to) throws IOException {
+        section(csv, faf, "purchases", true);
+        row(csv, "SupplierName", "SupplierCountry", "SupplierTRN", "InvoiceDate", "InvoiceNo", "PermitNo", "TransactionID", "LineNo", "ProductDescription", "PurchaseValueAED", "VATValueAED", "TaxCode", "FCYCode", "PurchaseFCY", "VATFCY");
+        Totals t = Totals.NONE;
+        try (Stream<Line> lines = lines(entityId, from, to, "IN")) {
+            for (Iterator<Line> it = lines.iterator(); it.hasNext();) {
+                Line l = it.next();
+                boolean foreign = !"AED".equals(l.currency());
+                row(csv, str(l.partyName(), 100), str(country(l.partyCountry(), l.partyTrn()), 50), str(l.partyTrn(), 15), date(l.docDate(), dates), str(number(l), 50),
+                        "CUSTOMS".equals(l.sourceSystem()) ? str(l.docNumber(), 20) : "", transactionId(l), String.valueOf(l.lineNo()), str(l.description(), 250),
+                        money(l.netAed()), money(l.vatAed()), taxCode(faf, l), foreign ? l.currency() : "XXX", foreign ? money(l.netDoc()) : "0.00", foreign ? money(l.vatDoc()) : "0.00");
+                t = t.plus(l.netAed(), l.vatAed());
+            }
+        }
+        row(csv, "PurchaseTotalAED", "VATTotalAED", "TransactionCountTotal");
+        row(csv, money(t.first()), money(t.second()), String.valueOf(t.rows()));
+        section(csv, faf, "purchases", false);
+        return t;
+    }
+
+    private Totals supplies(Writer csv, RulePackDefinition.Faf faf, DateTimeFormatter dates, UUID entityId, LocalDate from, LocalDate to) throws IOException {
+        section(csv, faf, "supplies", true);
+        row(csv, "CustomerName", "CustomerCountry", "CustomerTRN", "InvoiceDate", "InvoiceNo", "TransactionID", "LineNo", "ProductDescription", "SupplyValueAED", "VATValueAED", "TaxCode", "Country", "FCYCode", "SupplyFCY", "VATFCY");
+        Totals t = Totals.NONE;
+        try (Stream<Line> lines = lines(entityId, from, to, "OUT")) {
+            for (Iterator<Line> it = lines.iterator(); it.hasNext();) {
+                Line l = it.next();
+                boolean foreign = !"AED".equals(l.currency());
+                String partyCountry = country(l.partyCountry(), l.partyTrn());
+                row(csv, str(l.partyName(), 100), str(partyCountry, 50), str(l.partyTrn(), 15), date(l.docDate(), dates), str(number(l), 50), transactionId(l), String.valueOf(l.lineNo()),
+                        str(l.description(), 250), money(l.netAed()), money(l.vatAed()), taxCode(faf, l), "AE".equals(partyCountry) ? "" : str(partyCountry, 50),
+                        foreign ? l.currency() : "XXX", foreign ? money(l.netDoc()) : "0.00", foreign ? money(l.vatDoc()) : "0.00");
+                t = t.plus(l.netAed(), l.vatAed());
+            }
+        }
+        row(csv, "SupplyTotalAED", "VATTotalAED", "TransactionCountTotal");
+        row(csv, money(t.first()), money(t.second()), String.valueOf(t.rows()));
+        section(csv, faf, "supplies", false);
+        return t;
+    }
+
+    private Totals ledger(Writer csv, RulePackDefinition.Faf faf, DateTimeFormatter dates, UUID entityId, LocalDate from, LocalDate to) throws IOException {
+        section(csv, faf, "ledger", true);
+        row(csv, "TransactionDate", "AccountID", "AccountName", "TransactionDescription", "Name", "TransactionID", "SourceDocumentID", "SourceType", "Debit", "Credit", "Balance");
+        Totals t = Totals.NONE;
+        try (Stream<Ledger> ledger = cursor.sql("""
                 SELECT transaction_date, account_id, account_name, description, party_name, transaction_id, source_document_id, source_type, debit_aed, credit_aed, balance_aed
                 FROM gl_journal_line WHERE entity_id = :entity AND transaction_date BETWEEN :from AND :to
                 ORDER BY transaction_date, account_id, transaction_id, line_no
-                """).param("entity", entityId).param("from", from).param("to", to).query(Ledger.class).list();
-
-        List<String> warnings = new ArrayList<>();
-        StringBuilder csv = new StringBuilder();
-        section(csv, faf, "company", true);
-        row(csv, "TaxablePersonNameEn", "TaxablePersonNameAr", "TRN", "TaxAgencyName", "TAN", "TaxAgentName", "TAAN", "PeriodStart", "PeriodEnd", "FAFCreationDate", "ProductVersion", "FAFVersion");
-        row(csv, str(e.legalName(), 100), str(e.legalNameAr(), 100), str(e.trn(), 15), str(agent.agencyName(), 100), str(agent.tan(), 20), str(agent.agentName(), 100), str(agent.taan(), 20),
-                from.format(dates), to.format(dates), LocalDate.now().format(dates), PRODUCT_VERSION, faf.version());
-        section(csv, faf, "company", false);
-
-        section(csv, faf, "purchases", true);
-        row(csv, "SupplierName", "SupplierCountry", "SupplierTRN", "InvoiceDate", "InvoiceNo", "PermitNo", "TransactionID", "LineNo", "ProductDescription", "PurchaseValueAED", "VATValueAED", "TaxCode", "FCYCode", "PurchaseFCY", "VATFCY");
-        BigDecimal purchaseNet = BigDecimal.ZERO;
-        BigDecimal purchaseVat = BigDecimal.ZERO;
-        int purchaseRows = 0;
-        for (Line l : lines) {
-            if (!"IN".equals(l.direction())) {
-                continue;
+                """).param("entity", entityId).param("from", from).param("to", to).query(Ledger.class).stream()) {
+            for (Iterator<Ledger> it = ledger.iterator(); it.hasNext();) {
+                Ledger g = it.next();
+                row(csv, date(g.transactionDate(), dates), str(g.accountId(), 20), str(g.accountName(), 100), str(g.description(), 250), str(g.partyName(), 100), str(g.transactionId(), 50),
+                        str(g.sourceDocumentId(), 50), str(g.sourceType(), 20), money(g.debitAed()), money(g.creditAed()), money(g.balanceAed()));
+                t = t.plus(g.debitAed(), g.creditAed());
             }
-            boolean foreign = !"AED".equals(l.currency());
-            row(csv, str(l.partyName(), 100), str(country(l.partyCountry(), l.partyTrn()), 50), str(l.partyTrn(), 15), date(l.docDate(), dates), str(number(l), 50),
-                    "CUSTOMS".equals(l.sourceSystem()) ? str(l.docNumber(), 20) : "", transactionId(l), String.valueOf(l.lineNo()), str(l.description(), 250),
-                    money(l.netAed()), money(l.vatAed()), taxCode(faf, l), foreign ? l.currency() : "XXX", foreign ? money(l.netDoc()) : "0.00", foreign ? money(l.vatDoc()) : "0.00");
-            purchaseNet = purchaseNet.add(l.netAed());
-            purchaseVat = purchaseVat.add(l.vatAed());
-            purchaseRows++;
-        }
-        row(csv, "PurchaseTotalAED", "VATTotalAED", "TransactionCountTotal");
-        row(csv, money(purchaseNet), money(purchaseVat), String.valueOf(purchaseRows));
-        section(csv, faf, "purchases", false);
-
-        section(csv, faf, "supplies", true);
-        row(csv, "CustomerName", "CustomerCountry", "CustomerTRN", "InvoiceDate", "InvoiceNo", "TransactionID", "LineNo", "ProductDescription", "SupplyValueAED", "VATValueAED", "TaxCode", "Country", "FCYCode", "SupplyFCY", "VATFCY");
-        BigDecimal supplyNet = BigDecimal.ZERO;
-        BigDecimal supplyVat = BigDecimal.ZERO;
-        int supplyRows = 0;
-        for (Line l : lines) {
-            if (!"OUT".equals(l.direction())) {
-                continue;
-            }
-            boolean foreign = !"AED".equals(l.currency());
-            String partyCountry = country(l.partyCountry(), l.partyTrn());
-            row(csv, str(l.partyName(), 100), str(partyCountry, 50), str(l.partyTrn(), 15), date(l.docDate(), dates), str(number(l), 50), transactionId(l), String.valueOf(l.lineNo()),
-                    str(l.description(), 250), money(l.netAed()), money(l.vatAed()), taxCode(faf, l), "AE".equals(partyCountry) ? "" : str(partyCountry, 50),
-                    foreign ? l.currency() : "XXX", foreign ? money(l.netDoc()) : "0.00", foreign ? money(l.vatDoc()) : "0.00");
-            supplyNet = supplyNet.add(l.netAed());
-            supplyVat = supplyVat.add(l.vatAed());
-            supplyRows++;
-        }
-        row(csv, "SupplyTotalAED", "VATTotalAED", "TransactionCountTotal");
-        row(csv, money(supplyNet), money(supplyVat), String.valueOf(supplyRows));
-        section(csv, faf, "supplies", false);
-
-        section(csv, faf, "ledger", true);
-        row(csv, "TransactionDate", "AccountID", "AccountName", "TransactionDescription", "Name", "TransactionID", "SourceDocumentID", "SourceType", "Debit", "Credit", "Balance");
-        BigDecimal debit = BigDecimal.ZERO;
-        BigDecimal credit = BigDecimal.ZERO;
-        for (Ledger g : ledger) {
-            row(csv, date(g.transactionDate(), dates), str(g.accountId(), 20), str(g.accountName(), 100), str(g.description(), 250), str(g.partyName(), 100), str(g.transactionId(), 50),
-                    str(g.sourceDocumentId(), 50), str(g.sourceType(), 20), money(g.debitAed()), money(g.creditAed()), money(g.balanceAed()));
-            debit = debit.add(g.debitAed());
-            credit = credit.add(g.creditAed());
         }
         row(csv, "TotalDebit", "TotalCredit", "TransactionCountTotal", "GLTCurrency");
-        row(csv, money(debit), money(credit), String.valueOf(ledger.size()), "AED");
+        row(csv, money(t.first()), money(t.second()), String.valueOf(t.rows()), "AED");
         section(csv, faf, "ledger", false);
-
-        if (ledger.isEmpty()) {
-            warnings.add("NO_GENERAL_LEDGER");
-        } else if (debit.compareTo(credit) != 0) {
-            warnings.add("LEDGER_NOT_BALANCED:" + debit.toPlainString() + ":" + credit.toPlainString());
-        }
-        warnings.addAll(checkAgainstReturns(entityId, from, to, supplyVat, purchaseVat));
-
-        boolean draft = !pack.meta().signedOff();
-        String name = "FAF_" + e.trn() + "_" + from + "_" + to + ".csv";
-        GeneratedDocuments.Doc doc = documents.store(entityId, null, "FAF", objectId, name, "text/csv", csv.toString().getBytes(StandardCharsets.UTF_8), draft);
-        return new Result(doc, purchaseRows, supplyRows, ledger.size(), purchaseVat, supplyVat, warnings);
+        return t;
     }
 
-    private List<Line> lines(UUID entityId, LocalDate from, LocalDate to) {
+    private static Path createTempFile() {
+        try {
+            return Files.createTempFile("faf-", ".csv");
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
+    }
+
+    private static void deleteQuietly(Path file) {
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException ex) {
+            // The operating system clears its temporary directory; nothing here depends on the file being gone.
+        }
+    }
+
+    private Stream<Line> lines(UUID entityId, LocalDate from, LocalDate to, String direction) {
         // Sorted by invoice date, then line number within an invoice, as the FTA document asks.
-        return jdbc.sql("""
+        return cursor.sql("""
                 SELECT COALESCE(d.counterparty_name, cp.name) AS party_name, COALESCE(l.counterparty_country, d.counterparty_country) AS party_country,
                        COALESCE(l.counterparty_trn, d.counterparty_trn) AS party_trn, COALESCE(d.doc_date, l.tax_point) AS doc_date, d.doc_number,
                        l.source_system, l.document_id, l.line_no, l.description, l.net_aed, l.vat_aed, l.treatment, l.line_kind, l.direction, l.currency, l.net_doc, l.vat_doc
@@ -168,10 +222,10 @@ public class FafService {
                 JOIN tax_period p ON p.id = l.period_id
                 LEFT JOIN source_document d ON d.id = l.document_id
                 LEFT JOIN counterparty cp ON cp.trn = COALESCE(l.counterparty_trn, d.counterparty_trn)
-                WHERE l.filer_entity_id = :entity AND l.superseded_at IS NULL AND l.memo = false
+                WHERE l.filer_entity_id = :entity AND l.superseded_at IS NULL AND l.memo = false AND l.direction = :direction
                   AND p.period_start >= :from AND p.period_end <= :to
                 ORDER BY COALESCE(d.doc_date, l.tax_point), d.doc_number, l.line_no, l.id
-                """).param("entity", entityId).param("from", from).param("to", to).query(Line.class).list();
+                """).param("entity", entityId).param("from", from).param("to", to).param("direction", direction).query(Line.class).stream();
     }
 
     /**
@@ -216,15 +270,15 @@ public class FafService {
         return warnings;
     }
 
-    private static void section(StringBuilder csv, RulePackDefinition.Faf faf, String name, boolean start) {
+    private static void section(Writer csv, RulePackDefinition.Faf faf, String name, boolean start) throws IOException {
         List<String> marker = faf.markers() == null ? null : faf.markers().get(name);
         if (marker != null && marker.size() == 2) {
-            csv.append(marker.get(start ? 0 : 1)).append("\r\n");
+            csv.write(marker.get(start ? 0 : 1) + "\r\n");
         }
     }
 
-    private static void row(StringBuilder csv, String... cells) {
-        csv.append(String.join(",", cells)).append("\r\n");
+    private static void row(Writer csv, String... cells) throws IOException {
+        csv.write(String.join(",", cells) + "\r\n");
     }
 
     /** The format has no quoting: a comma in a value would shift the columns, so it is replaced. */

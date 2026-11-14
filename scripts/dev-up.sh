@@ -16,5 +16,5 @@ echo "Starting the front end on http://localhost:5183 (log: .data/frontend.log)"
 (cd frontend && nohup npx vite --port 5183 --strictPort > ../.data/frontend.log 2>&1 &)
 
 echo "Waiting for the backend..."
-until curl -sf http://localhost:18090/actuator/health >/dev/null; do sleep 2; done
+until curl -sf http://localhost:18091/actuator/health >/dev/null; do sleep 2; done
 echo "Ready: open http://localhost:5183 and sign in as admin, preparer, reviewer, partner, approver or auditor (password demo-pass-1)."

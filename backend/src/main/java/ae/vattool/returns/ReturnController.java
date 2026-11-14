@@ -109,7 +109,9 @@ public class ReturnController {
                 : returns.latest(p.id()).orElse(null);
         RulePackDefinition definition = version != null ? packs.definition(version.rulePackId()) : current.definition();
         List<BoxDefinition> form = definition.form().boxes().stream().map(ReturnController::define).toList();
-        boolean draft = version != null ? !packs.isSignedOff(version.rulePackId()) : !current.meta().signedOff();
+        boolean draft = version != null
+                ? !packs.isSignedOff(version.rulePackId()) || !packs.isClientRulesSignedOff(version.clientRuleVersionId())
+                : !current.signedOff();
         return new ReturnView(p, version, form, draft);
     }
 

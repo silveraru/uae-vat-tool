@@ -74,8 +74,14 @@ hardware before relying on them.
 - Connector pulls and the FX feed can run twice if two workers fire together. Reloads are idempotent, so nothing
   doubles, but the source system is asked twice. Run the scheduled pulls on one worker if that matters to a source.
 - The SFTP poller expects one worker per inbox directory.
-- Uploads, the FTA Audit File and audit bundles are held in memory. Size the heap for the largest file you accept,
-  or do the streaming work first.
+- CSV uploads, by screen or SFTP, are spooled to a temporary file and loaded 500 rows at a time. The FTA Audit File
+  is written to a temporary file as its rows are read. Neither needs a heap the size of the file.
+- Still held in memory: XLSX, UBL and bank statement uploads, every download, and audit bundles. A download is
+  decrypted whole because AES-GCM checks the entire object before it releases any of it. Streaming downloads needs
+  an encryption format in chunks. Until then, size the heap for the largest of these you accept, and ask for large
+  ledgers as CSV.
+- Temporary files go to `java.io.tmpdir`. It needs room for about three copies of the largest upload at once:
+  the upload itself, the spooled copy and its encrypted copy.
 - Drill-down on a period with 5 million lines still misses its target: p95 6.1 s against 2 s. The cause has not been found.
 - PostgreSQL in Docker needs more than the default 64 MB of shared memory. Without it, `VACUUM` and parallel queries fail on
   large tables. `docker-compose.yml` sets 1 GB.

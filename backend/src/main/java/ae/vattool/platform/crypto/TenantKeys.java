@@ -1,8 +1,15 @@
 package ae.vattool.platform.crypto;
 
 import ae.vattool.platform.tenancy.RequestContext;
+import java.io.BufferedOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -64,6 +71,36 @@ public class TenantKeys {
             return ByteBuffer.allocate(MAGIC.length + Integer.BYTES + iv.length + ct.length).put(MAGIC).putInt(key.version()).put(iv).put(ct).array();
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException("Could not encrypt", e);
+        }
+    }
+
+    /**
+     * Encrypts one file into another, for content too large to hold in memory. The result has the same
+     * layout as {@link #encrypt(byte[])}, so it is read back by {@link #decrypt(byte[])} like any other object.
+     */
+    public void encrypt(Path plain, Path encrypted) {
+        CachedKey key = currentKey();
+        byte[] iv = new byte[IV_BYTES];
+        random.nextBytes(iv);
+        try (InputStream in = Files.newInputStream(plain); OutputStream out = new BufferedOutputStream(Files.newOutputStream(encrypted))) {
+            Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
+            c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key.key(), "AES"), new GCMParameterSpec(TAG_BITS, iv));
+            out.write(MAGIC);
+            out.write(ByteBuffer.allocate(Integer.BYTES).putInt(key.version()).array());
+            out.write(iv);
+            byte[] buffer = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buffer)) > 0) {
+                byte[] part = c.update(buffer, 0, n);
+                if (part != null) {
+                    out.write(part);
+                }
+            }
+            out.write(c.doFinal());
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("Could not encrypt", e);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 

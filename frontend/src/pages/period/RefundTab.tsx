@@ -40,6 +40,21 @@ export function RefundTab() {
             </form>
           )}
           {p.request && <RequestCard request={p.request} position={p} canFile={roles.canFile} />}
+          {p.earlier.length > 0 && (
+            <section className="card">
+              <h2>{t("refund.earlier")}</h2>
+              <ul>
+                {p.earlier.map((r) => (
+                  <li key={r.id}>
+                    <Money value={r.amountAed} /> <Badge value={r.status} />
+                    {r.submissionRef && <> <span className="ltr muted">{r.submissionRef}</span></>}
+                    {r.decidedOn && <> <small className="muted">{t("refund.decidedOn", { on: r.decidedOn })}</small></>}
+                    {r.decisionNote && <><br /><small>{r.decisionNote}</small></>}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </>
       )}
     </Query>

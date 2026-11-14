@@ -70,7 +70,7 @@ public class AnalyticsService {
     /** Compares a period with the one before it, and with the trailing average, for what a reviewer should look at. */
     @Transactional
     public List<Anomaly> anomalies(TaxPeriod p) {
-        RulePackDefinition def = packs.forDate(p.periodEnd()).definition();
+        RulePackDefinition def = packs.forEntity(p.entityId(), p.periodEnd()).definition();
         RulePackDefinition.Analytics a = RulePackDefinition.require(def.analytics(), "analytics");
         List<Point> series = trends(p.entityId());
         int at = -1;

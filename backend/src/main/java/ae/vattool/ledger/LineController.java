@@ -91,15 +91,38 @@ public class LineController {
         return new LinesPage(rows, total, Math.max(page, 0), safe);
     }
 
+    /** One revision of a line, with the name of whoever made it when a person did. */
+    public record Revision(TaxLine line, String changedByName) {}
+
+    /** Every revision of one logical line, oldest first: how it was loaded, and each change since with its reason. */
     @GetMapping("/lines/{logicalId}/history")
-    public List<TaxLine> history(@PathVariable UUID logicalId) {
+    @Transactional(readOnly = true)
+    public List<Revision> history(@PathVariable UUID logicalId) {
         List<TaxLine> history = ledger.history(logicalId);
         if (history.isEmpty()) {
             throw DomainException.notFound("Tax line");
         }
         TaxPeriod p = period(history.getFirst().periodId());
         access.requireReadPeriod(p.entityId(), p.isLocked());
-        return history;
+        List<UUID> people = history.stream().map(TaxLine::changedBy).map(LineController::uuidOrNull).filter(java.util.Objects::nonNull).distinct().toList();
+        Map<UUID, String> names = new HashMap<>();
+        if (!people.isEmpty()) {
+            jdbc.sql("SELECT id, display_name FROM app_user WHERE id IN (:ids)").param("ids", people)
+                    .query((rs, n) -> Map.entry(rs.getObject("id", UUID.class), rs.getString("display_name"))).list()
+                    .forEach(e -> names.put(e.getKey(), e.getValue()));
+        }
+        return history.stream().map(l -> {
+            UUID person = uuidOrNull(l.changedBy());
+            return new Revision(l, person == null ? l.changedBy() : names.getOrDefault(person, l.changedBy()));
+        }).toList();
+    }
+
+    private static UUID uuidOrNull(String actor) {
+        try {
+            return actor == null ? null : UUID.fromString(actor);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /**

@@ -11,6 +11,7 @@ import ae.vattool.support.Scenario;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -90,6 +91,31 @@ class FafAndAuditCaseTest extends IntegrationTest {
         assertThat(lines[22]).isEqualTo("10500.00,10500.00,3,AED");
         assertThat(lines[23]).isEqualTo("GLDataEnd");
         assertThat(result.get("warnings")).isEmpty();
+    }
+
+    @Test
+    void aFileLongerThanOneDatabaseFetchListsEveryLineInDateOrder() throws Exception {
+        // The file is written as rows are read, 2,000 at a time, so this needs two fetches.
+        StringBuilder csv = new StringBuilder(Scenario.AR_HEAD);
+        for (int i = 1; i <= 2050; i++) {
+            csv.append("TAX_INVOICE,BULK-").append(i).append(",2027-01-").append(String.format("%02d", 11 + i % 20))
+                    .append(",100.00,5.00,S5,DXB-1,").append(Scenario.CUSTOMER).append(",B2B\n");
+        }
+        s.client.uploadCsv(entity, "AR", csv.toString());
+
+        JsonNode result = faf();
+        List<String> lines = List.of(fileOf(result.get("document")).split("\r\n"));
+        int header = lines.indexOf("CustomerName,CustomerCountry,CustomerTRN,InvoiceDate,InvoiceNo,TransactionID,LineNo,ProductDescription,SupplyValueAED,VATValueAED,TaxCode,Country,FCYCode,SupplyFCY,VATFCY");
+        int totals = lines.indexOf("SupplyTotalAED,VATTotalAED,TransactionCountTotal");
+        List<String> supplies = lines.subList(header + 1, totals);
+
+        assertThat(result.get("supplyRows").asInt()).isEqualTo(2051);
+        assertThat(supplies).hasSize(2051);
+        assertThat(lines.get(totals + 1)).isEqualTo("215000.00,10750.00,2051");
+        DateTimeFormatter fta = DateTimeFormatter.ofPattern("dd-MM-yyyy");
+        List<LocalDate> dates = supplies.stream().map(r -> LocalDate.parse(r.split(",", -1)[3], fta)).toList();
+        assertThat(dates).isSorted();
+        assertThat(supplies.stream().map(r -> r.split(",", -1)[4]).distinct()).hasSize(2051);
     }
 
     @Test

@@ -56,7 +56,7 @@ export function PortfolioPage() {
                           <td>{r.periodId ? <Link to={`/periods/${r.periodId}`} className="ltr">{formatDate(r.periodStart)} → {formatDate(r.periodEnd)}</Link> : "–"}</td>
                           <td>
                             <span className="ltr">{formatDate(r.dueDate)}</span>
-                            {r.daysLeft !== null && <small className="muted"> ({t("portfolio.daysLeft", { count: r.daysLeft })})</small>}
+                            {r.daysLeft !== null && <small className="muted"> ({r.daysLeft < 0 ? t("portfolio.daysOverdue", { count: -r.daysLeft }) : t("portfolio.daysLeft", { count: r.daysLeft })})</small>}
                           </td>
                           <td><Badge value={r.state} /></td>
                           <td className="num">{r.blockingOpen ?? "–"}</td>

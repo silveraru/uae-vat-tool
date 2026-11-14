@@ -158,7 +158,7 @@ public class WebhookDispatcher {
             code = http.send(request, HttpResponse.BodyHandlers.discarding()).statusCode();
             if (code >= 200 && code < 300) {
                 record(p, "DELIVERED", code, null);
-                metrics.counter("vat.webhook.deliveries", "result", "delivered").increment();
+                metrics.counter("vat.webhook.deliveries", "tenant", RequestContext.requireTenant().toString(), "result", "delivered").increment();
                 return true;
             }
             error = "HTTP " + code;
@@ -171,7 +171,7 @@ public class WebhookDispatcher {
         }
         boolean giveUp = p.attempts() + 1 >= MAX_ATTEMPTS;
         record(p, giveUp ? "FAILED" : "PENDING", code, error);
-        metrics.counter("vat.webhook.deliveries", "result", giveUp ? "failed" : "retry").increment();
+        metrics.counter("vat.webhook.deliveries", "tenant", RequestContext.requireTenant().toString(), "result", giveUp ? "failed" : "retry").increment();
         return false;
     }
 

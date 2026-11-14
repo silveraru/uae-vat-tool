@@ -112,7 +112,7 @@ public class DeadlineAlertJob {
         int people = notifier.toRoles(p.entityId(), p.id(), "DEADLINE_T" + tier, RECIPIENTS.get(tier),
                 daysLeft < 0 ? "notify.deadline.overdue" : "notify.deadline.title", "notify.deadline.body",
                 "entity", p.legalName(), "task", new ae.vattool.platform.notify.Notifier.Text(task), "days", daysLeft, "end", p.periodEnd(), "due", p.dueDate(), "state", p.state());
-        metrics.counter("vat.deadline.alerts", "tier", String.valueOf(tier)).increment(people);
+        metrics.counter("vat.deadline.alerts", "tenant", RequestContext.requireTenant().toString(), "tier", String.valueOf(tier)).increment(people);
         return people;
     }
 }

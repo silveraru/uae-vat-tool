@@ -205,6 +205,10 @@ public final class Classifier {
         if (w.establishmentDesignatedZone() != null && w.establishmentDesignatedZone() != f.establishmentDesignatedZone()) {
             return false;
         }
+        if (w.descriptionMatches() != null && !w.descriptionMatches().isBlank()
+                && (f.description() == null || !PATTERNS.computeIfAbsent(w.descriptionMatches(), Classifier::compile).matcher(f.description()).find())) {
+            return false;
+        }
         return w.mappedTreatmentIn() == null
                 || (f.mapped() != null && w.mappedTreatmentIn().contains(f.mapped().treatment()));
     }

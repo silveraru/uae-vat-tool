@@ -16,15 +16,20 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 @Configuration
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain api(HttpSecurity http, CurrentUserFilter currentUserFilter) throws Exception {
+    SecurityFilterChain api(HttpSecurity http, CurrentUserFilter currentUserFilter,
+                            @Value("${management.server.port:-1}") int managementPort) throws Exception {
+        // Prometheus and health probes cannot sign in. The management port is bound to a private address instead.
+        RequestMatcher onManagementPort = request -> managementPort > 0 && request.getLocalPort() == managementPort;
         http.csrf(AbstractHttpConfigurer::disable) // bearer tokens only, no cookies
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a
+                        .requestMatchers(onManagementPort).permitAll()
                         .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults()))

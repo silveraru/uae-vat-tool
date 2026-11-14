@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
@@ -54,7 +55,15 @@ public class IngestionController {
                                               @RequestPart("file") MultipartFile file,
                                               @RequestParam(defaultValue = Templates.CURRENT_VERSION) String templateVersion) throws IOException {
         access.require(id, Permission.EDIT_DATA);
-        return ingestion.loadFile(id, Templates.parseKind(kind), templateVersion, "UPLOAD", file.getOriginalFilename(), file.getBytes());
+        Templates.Kind k = Templates.parseKind(kind);
+        // Spooled to disk rather than read into memory, so a large file costs no more heap than a small one.
+        java.nio.file.Path spooled = java.nio.file.Files.createTempFile("upload-", ".tmp");
+        try {
+            file.transferTo(spooled);
+            return ingestion.loadFile(id, k, templateVersion, "UPLOAD", file.getOriginalFilename(), spooled);
+        } finally {
+            java.nio.file.Files.deleteIfExists(spooled);
+        }
     }
 
     @PostMapping(path = "/entities/{id}/ingest/{kind}/rows", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -122,23 +131,39 @@ public class IngestionController {
         return einvoices.list(id, from, to);
     }
 
-    /** Fetches events the platform already sent, for a new client or after an outage. */
+    /**
+     * Fetches events the platform already sent, for a new client or after an outage. It asks for this
+     * entity's own TRN and applies only events for it, so access to one client cannot load another's.
+     * The trn parameter is optional and, when given, must be this entity's.
+     */
     @PostMapping("/entities/{id}/einvoices/backfill")
-    public BackfillResult backfill(@PathVariable UUID id, @RequestParam String trn,
+    public BackfillResult backfill(@PathVariable UUID id, @RequestParam(required = false) String trn,
                                    @RequestParam LocalDate from, @RequestParam LocalDate to) {
         access.require(id, Permission.EDIT_DATA);
-        List<EinvoiceEvent> events = RestClient.create(backfillUrl).get()
-                .uri(u -> u.path("/backfill")
-                        .queryParam("tenantId", RequestContext.requireTenant())
-                        .queryParam("entityTrn", trn).queryParam("from", from).queryParam("to", to).build())
-                .retrieve()
-                .body(new org.springframework.core.ParameterizedTypeReference<>() {});
+        String entityTrn = ingestion.filerTrn(id);
+        if (trn != null && !trn.isBlank() && !trn.trim().equals(entityTrn)) {
+            throw DomainException.invalid("BACKFILL_TRN_MISMATCH", "That TRN is not this entity's. A backfill asks for this entity's own e-invoices.");
+        }
+        if (to.isBefore(from)) {
+            throw DomainException.invalid("RANGE_INVALID", "Give a start date on or before the end date");
+        }
+        List<EinvoiceEvent> events;
+        try {
+            events = RestClient.create(backfillUrl).get()
+                    .uri(u -> u.path("/backfill")
+                            .queryParam("tenantId", RequestContext.requireTenant())
+                            .queryParam("entityTrn", entityTrn).queryParam("from", from).queryParam("to", to).build())
+                    .retrieve()
+                    .body(new org.springframework.core.ParameterizedTypeReference<>() {});
+        } catch (RestClientException e) {
+            throw DomainException.conflict("ASP_UNREACHABLE", "The e-invoicing platform did not answer: " + e.getMessage());
+        }
         int applied = 0;
         int duplicates = 0;
         int unknown = 0;
         for (EinvoiceEvent e : events == null ? List.<EinvoiceEvent>of() : events) {
-            // Only this tenant's events are ever applied, whatever the upstream response contains.
-            if (!RequestContext.requireTenant().equals(e.tenantId())) {
+            // Only this tenant's events for this entity are ever applied, whatever the upstream response contains.
+            if (!RequestContext.requireTenant().equals(e.tenantId()) || !entityTrn.equals(e.entityTrn())) {
                 continue;
             }
             switch (einvoices.apply(e)) {

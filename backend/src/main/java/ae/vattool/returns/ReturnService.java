@@ -45,10 +45,18 @@ public class ReturnService {
 
     public record Computed(Map<String, BoxValue> boxes, Map<UUID, Map<String, BoxValue>> perMember, long lines) {}
 
-    /** The pack in force at period end decides the form, so one period always uses one form. */
+    /**
+     * The pack in force at period end decides the form, so one period always uses one form. The client's
+     * own rules are laid over it: they can move review tolerances, never the form.
+     */
     @Transactional
     public RulePackStore.ActivePack packFor(TaxPeriod period) {
-        return packs.forDate(period.periodEnd());
+        return packs.forEntity(period.entityId(), period.periodEnd());
+    }
+
+    /** Empty without client rules, so returns computed before client rules existed keep their hash. */
+    private static String rulesSuffix(RulePackStore.ActivePack pack) {
+        return pack.clientRuleVersionId() == null ? "" : "|client-rules:" + pack.clientRuleVersionId();
     }
 
     /** Figures from the ledger as it is now, without saving anything. */
@@ -82,7 +90,8 @@ public class ReturnService {
         Computed computed = computeNow(period, form);
         String fingerprint = fingerprint(periodId);
         String valuesJson = canonicalValues(computed.boxes());
-        String hash = VaultStorage.sha256(valuesJson + "|" + form.version() + "|" + pack.meta().version());
+        // New rules make a new version even when no figure moves, so a return always names the rules it was checked under.
+        String hash = VaultStorage.sha256(valuesJson + "|" + form.version() + "|" + pack.meta().version() + rulesSuffix(pack));
 
         String previousFingerprint = jdbc.sql("SELECT data_fingerprint FROM tax_period WHERE id = ?").param(periodId)
                 .query(String.class).optional().orElse(null);
@@ -99,13 +108,13 @@ public class ReturnService {
         jdbc.sql("""
                 INSERT INTO return_version (id, tenant_id, entity_id, period_id, version_no, form_code, form_version, rule_pack_id,
                     rule_pack_version, rule_pack_signed_off, box_values, member_values, values_hash, data_fingerprint, diff,
-                    line_count, trigger, created_by)
+                    line_count, trigger, created_by, client_rule_version_id)
                 VALUES (:id, :tenant, :entity, :period, :no, :formCode, :formVersion, :packId, :packVersion, :signedOff,
-                    CAST(:boxes AS jsonb), CAST(:members AS jsonb), :hash, :fingerprint, CAST(:diff AS jsonb), :lines, :trigger, :by)
+                    CAST(:boxes AS jsonb), CAST(:members AS jsonb), :hash, :fingerprint, CAST(:diff AS jsonb), :lines, :trigger, :by, :clientRules)
                 """)
                 .param("id", id).param("tenant", RequestContext.requireTenant()).param("entity", period.entityId())
                 .param("period", periodId).param("no", number).param("formCode", form.code()).param("formVersion", form.version())
-                .param("packId", pack.meta().id()).param("packVersion", pack.meta().version())
+                .param("packId", pack.meta().id()).param("packVersion", pack.meta().version()).param("clientRules", pack.clientRuleVersionId())
                 .param("signedOff", pack.meta().signedOff()).param("boxes", valuesJson)
                 .param("members", membersJson(computed.perMember())).param("hash", hash).param("fingerprint", fingerprint)
                 .param("diff", latest.map(v -> JSON.writeValueAsString(diff(v.boxValues(), computed.boxes()))).orElse(null))
@@ -129,15 +138,16 @@ public class ReturnService {
         jdbc.sql("""
                 INSERT INTO return_version (id, tenant_id, entity_id, period_id, version_no, status, form_code, form_version, rule_pack_id,
                     rule_pack_version, rule_pack_signed_off, box_values, member_values, values_hash, data_fingerprint, diff,
-                    line_count, trigger, created_by)
+                    line_count, trigger, created_by, client_rule_version_id)
                 VALUES (:id, :tenant, :entity, :period, :no, 'CORRECTED', :formCode, :formVersion, :packId, :packVersion, :signedOff,
-                    CAST(:boxes AS jsonb), CAST(:members AS jsonb), :hash, :fingerprint, CAST(:diff AS jsonb), 0, 'CORRECTION', :by)
+                    CAST(:boxes AS jsonb), CAST(:members AS jsonb), :hash, :fingerprint, CAST(:diff AS jsonb), 0, 'CORRECTION', :by, :clientRules)
                 """)
                 .param("id", id).param("tenant", RequestContext.requireTenant()).param("entity", period.entityId())
                 .param("period", period.id()).param("no", number).param("formCode", form.code()).param("formVersion", form.version())
                 .param("packId", pack.meta().id()).param("packVersion", pack.meta().version()).param("signedOff", pack.meta().signedOff())
+                .param("clientRules", pack.clientRuleVersionId())
                 .param("boxes", valuesJson).param("members", membersJson(perMember))
-                .param("hash", VaultStorage.sha256(valuesJson + "|" + form.version() + "|" + pack.meta().version()))
+                .param("hash", VaultStorage.sha256(valuesJson + "|" + form.version() + "|" + pack.meta().version() + rulesSuffix(pack)))
                 .param("fingerprint", fingerprint(period.id()))
                 .param("diff", JSON.writeValueAsString(diff(original.boxValues(), boxes)))
                 .param("by", RequestContext.requireActor().actorId())

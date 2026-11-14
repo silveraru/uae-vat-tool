@@ -76,7 +76,7 @@ public class SuggestionService {
     public Generated generate(UUID periodId) {
         TaxPeriod p = calendar.get(periodId);
         requireOpen(p);
-        RulePackDefinition.Suggestions rule = RulePackDefinition.require(packs.forDate(p.periodEnd()).definition().suggestions(), "suggestions");
+        RulePackDefinition.Suggestions rule = RulePackDefinition.require(packs.forEntity(p.entityId(), p.periodEnd()).definition().suggestions(), "suggestions");
         // A suggestion for a line that has since been revised no longer applies.
         jdbc.sql("""
                 UPDATE classification_suggestion s SET status = 'STALE'

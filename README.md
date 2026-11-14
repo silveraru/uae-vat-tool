@@ -28,7 +28,33 @@ Then open <http://localhost:5183> and sign in. The password for all demo users i
 | `approver` | Client CFO: approves and locks |
 | `auditor` | External auditor: reads locked periods only |
 
-The five golden entities load on first start in the dev profile, so there is data to look at right away.
+### Demo data
+
+On first start in the dev profile the backend builds a year of history for five fictional clients, which takes about
+five minutes. It goes through the real services as the people above, so every return was reconciled, signed off in turn,
+packed and filed, and every bank line, e-invoice and audit event is the kind the product would hold. Three more firm staff,
+the clients' own approvers and an external auditor exist as users too, but cannot sign in. Each client's last month is
+left at a different stage, so every screen has something on it:
+
+| Client | What its year shows | Last month's return |
+|---|---|---|
+| Al Noor Home Furnishings Trading LLC | Monthly. E-invoicing pilot since July, exports, antique carpets under the margin scheme, imports through customs, a refund, bad debt relief and a later recovery, the six-month rule, a voluntary disclosure settled, an open FTA audit | With the reviewer. A waived R06 means the partner signs too, then the client approves by e-signature |
+| Falcon Logistics Holding LLC | A tax group with two members. E-invoicing, a refund rejected and then paid, a disclosure drafted, the truck fleet under the capital assets scheme | Open, with work in it: a missing e-invoice to ask the platform for, a fuzzy match to accept, rows rejected at load, a new SAP tax code with suggestions, the six-month rule. The month before is filed and only half paid |
+| Desert Rose Real Estate LLC | Quarterly. Exempt residential leases, apportionment with the annual adjustment, the tower under the capital assets scheme, records kept 15 years, a refund approved, a closed FTA review | Open and nearly ready: a deemed supply waits for the reviewer |
+| Zarina Jewellery & Bullion Trading LLC | Gold bought under the domestic reverse charge, bullion imports, tourist refunds, exports, pre-owned jewellery under the margin scheme, a refund received, a closed audit | Approved, pack generated, waiting to be filed on EmaraTax |
+| Jebel Ali Marine Supplies FZCO | A designated zone company. Out-of-scope zone sales, refunds at every stage, a disclosure submitted, an open refund audit | Blocked by an export past its 90 days and an invoice waiting for a rupee rate. Pull the rate feed on the Practice page to free it |
+
+Every name, TRN, figure and document is made up, and the files in the evidence vault say so on their face. Dates follow
+the day the demo was built, so last month is always the one being closed. To build it again from an empty database:
+
+```bash
+./scripts/reset-demo.sh   # backs up the current database to .data/backups first
+```
+
+In development a stub on port 18097 stands in for the outside systems the settings point at: the billing system that
+receives webhooks, the clients' ERPs, a Central Bank rate feed, and the e-invoicing platform's backfill. The browser test
+`e2e/demo-tour.spec.ts` checks that every section of every demo client has something to show. The golden entities in
+`fixtures/golden` are for the tests and are no longer loaded into the dev database.
 
 | Service | Address |
 |---|---|
@@ -38,9 +64,28 @@ The five golden entities load on first start in the dev profile, so there is dat
 | Alert emails (Mailpit) | <http://localhost:18125> |
 | Object storage console (vatminio / vatminio-secret) | <http://localhost:19101> |
 | Traces (Jaeger) | <http://localhost:16686> |
+| Health and metrics, for Prometheus (local only, no token) | <http://localhost:18091/actuator/prometheus> |
 
 Ports are chosen to avoid others in use on the development machine, and the Compose project is
 named `uaevat`, so it does not touch other projects' containers.
+
+### Rule packs and client rules
+
+Every client follows the firm's rule pack: the tax rules and the VAT201 form, held as data. On the Rule packs page an
+admin opens a version to read it section by section, along with its source and the notes and open questions in it. To
+change it, the admin edits a copy. A check lists every rule the copy changes before it is saved. Saving makes a new
+draft version, in force from its effective date, and its return packs carry the watermark until the tax team signs it
+off. A version saved by mistake can be retired, and the one before applies again.
+
+Client rules sit on top of the pack for one client, in the client's Rules card. They can add classification rules and
+review patterns, switch off a firm rule with a reason, and move review tolerances and analytics thresholds. They cannot
+change rates, the form, deadlines or penalties. Each change is a dated version with a reason, signed off like the pack,
+and each line records the version that classified it. Neither kind of change touches lines already loaded: they keep
+their treatment, and new rules apply to data loaded afterwards and to the next reconciliation.
+
+In the demo, the firm has signed off the shipped pack and an edit of its own, which blocks golf and club memberships
+as entertainment. Every client has signed-off rules of its own, and Falcon has a draft for next month, waiting for
+sign-off, that switches off the diesel check.
 
 ### Feed in e-invoices
 
@@ -122,8 +167,9 @@ docs/             status against the requirements, tax team questions, load test
   a revision and stamps `superseded_at`, which a trigger enforces.
 - **Lock order.** Take the period row first, then the recompute request row, and write to the audit log
   last. A different order can deadlock a data load against the recompute job.
-- **Tax logic is data.** Put rules and form changes in a rule pack, not code, and upload them as a new
-  version with an effective date.
+- **Tax logic is data.** Put rules and form changes in a rule pack, not code: edit a copy on the Rule packs page,
+  or upload one through the API, as a new version with an effective date. What applies to one client only goes in
+  its client rules, never in a copy of the pack.
 - **Nothing disappears silently.** A rejected, held or unclassified row raises a blocking exception.
 
 ## What is not done
@@ -139,8 +185,9 @@ Needed before real use, and not code that could be written here:
 - A manual accessibility audit: the automated checks catch only part of WCAG 2.1 AA
 
 Known limits are listed per requirement in [docs/requirements-status.md](docs/requirements-status.md). The ones
-most likely to matter: the ERP connector mappings have never met a live system, and uploads and the FAF are
-held in memory, so very large files need the streaming work first.
+most likely to matter: the ERP connector mappings have never met a live system, and only CSV uploads and the FAF
+are streamed. A workbook, a download or an audit bundle is still held in memory, so very large files should come
+as CSV.
 
 For production: run with the `prod` profile and set `app.crypto.kms` to a real key service, which that profile
 enforces. Set `app.storage.lock-mode` to `COMPLIANCE`, replace the demo realm and its users, and leave `app.seed`

@@ -29,6 +29,7 @@ import tools.jackson.databind.json.JsonMapper;
 public class EinvoiceBridge {
     private static final Logger log = LoggerFactory.getLogger(EinvoiceBridge.class);
     private static final ObjectMapper JSON = JsonMapper.builder().build();
+    private static final String UNKNOWN = "unknown";
 
     private final EinvoiceStore store;
     private final MeterRegistry metrics;
@@ -44,16 +45,18 @@ public class EinvoiceBridge {
         try {
             event = JSON.readValue(record.value(), EinvoiceEvent.class);
         } catch (JacksonException e) {
-            metrics.counter("vat.einvoice.events", "result", "unreadable").increment();
+            metrics.counter("vat.einvoice.events", "tenant", UNKNOWN, "result", "unreadable").increment();
             throw new IllegalArgumentException("Unreadable e-invoice event at offset " + record.offset(), e);
         }
         if (event.tenantId() == null || event.eventId() == null || event.invoiceUuid() == null
                 || event.eventType() == null || event.occurredAt() == null) {
-            metrics.counter("vat.einvoice.events", "result", "invalid").increment();
+            metrics.counter("vat.einvoice.events", "tenant", UNKNOWN, "result", "invalid").increment();
             throw new IllegalArgumentException("E-invoice event at offset " + record.offset() + " is missing required fields");
         }
         EinvoiceStore.Applied result = RequestContext.asSystem(event.tenantId(), "einvoice-bridge", () -> store.apply(event));
-        metrics.counter("vat.einvoice.events", "result", result.name().toLowerCase()).increment();
+        // An event for no known entity may name no real tenant either, so it is not given a series of its own.
+        String tenant = result == EinvoiceStore.Applied.UNKNOWN_ENTITY ? UNKNOWN : event.tenantId().toString();
+        metrics.counter("vat.einvoice.events", "tenant", tenant, "result", result.name().toLowerCase()).increment();
         // A sender's clock running ahead must not turn the lag negative, which a timer rejects.
         java.time.Duration lag = java.time.Duration.between(event.occurredAt().toInstant(), java.time.Instant.now());
         metrics.timer("vat.einvoice.lag").record(lag.isNegative() ? java.time.Duration.ZERO : lag);

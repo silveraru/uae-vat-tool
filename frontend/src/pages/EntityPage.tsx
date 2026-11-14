@@ -6,7 +6,8 @@ import { api } from "../api/client";
 import type { AgentLink, AppUser, Assignment, CapitalAssetView, Connector, ConnectorProfileView, ConnectorRun, Entity, EntityGrant, Establishment, MappingEntry, MappingVersion, Period, Signatory } from "../api/types";
 import { Query } from "../components/Query";
 import { Badge, ErrorAlert, Field, Money, useAction, useRoles } from "../components/ui";
-import { formatDate } from "../i18n";
+import { formatDate, isoDate } from "../i18n";
+import { ClientRulesSection } from "./ClientRulesSection";
 
 const EMIRATES = ["AUH", "DXB", "SHJ", "AJM", "UAQ", "RAK", "FUJ"];
 const TREATMENTS = ["STANDARD", "ZERO_RATED", "EXEMPT", "OUT_OF_SCOPE", "REVERSE_CHARGE", "IMPORT", "DRC", "TOURIST_REFUND"];
@@ -43,6 +44,7 @@ export function EntityPage() {
           {e.entityKind === "GROUP_REPRESENTATIVE" && <Members entityId={id} />}
           <Establishments entityId={id} admin={roles.isAdmin} />
           {e.entityKind !== "GROUP_MEMBER" && <Mappings entityId={id} admin={roles.isAdmin} />}
+          {e.entityKind !== "GROUP_MEMBER" && <ClientRulesSection entityId={id} admin={roles.isAdmin} />}
           <Agents entityId={id} admin={roles.isAdmin} />
         </>
       )}
@@ -208,8 +210,8 @@ function CapitalAssets({ entityId, canEdit }: { entityId: string; canEdit: boole
             <Field label={t("exceptions.description")}><input required value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
             <Field label={t("entity.assetCategory")}>
               <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                <option value="REAL_ESTATE">{t("evidence.realEstate")}</option>
-                <option value="OTHER">{t("entity.otherAsset")}</option>
+                <option value="REAL_ESTATE">{t("entity.realEstateAsset")}</option>
+                <option value="OTHER">{t("entity.otherAssetYears")}</option>
               </select>
             </Field>
             <Field label={t("entity.cost")}><input type="number" step="0.01" required value={form.costAed} onChange={(e) => setForm({ ...form, costAed: e.target.value })} /></Field>
@@ -299,7 +301,7 @@ function ConnectorRuns({ connectorId }: { connectorId: string }) {
 
 function Periods({ entityId, admin }: { entityId: string; admin: boolean }) {
   const { t } = useTranslation();
-  const [through, setThrough] = useState("2027-03-31");
+  const [through, setThrough] = useState(() => isoDate(new Date(new Date().getFullYear(), new Date().getMonth() + 4, 0)));
   const query = useQuery({ queryKey: ["periods", entityId], queryFn: () => api.get<Period[]>(`/entities/${entityId}/periods`) });
   const ensure = useAction((d: string) => api.post(`/entities/${entityId}/periods/ensure`, d), [["periods", entityId]]);
   return (
@@ -403,7 +405,7 @@ function Mappings({ entityId, admin }: { entityId: string; admin: boolean }) {
     queryFn: () => api.get<{ entries: MappingEntry[] }>(`/entities/${entityId}/mappings/${latestId}`),
     enabled: !!latestId,
   });
-  const [effectiveFrom, setEffectiveFrom] = useState("2027-01-01");
+  const [effectiveFrom, setEffectiveFrom] = useState(() => isoDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
   const [note, setNote] = useState("");
   const [rows, setRows] = useState<MappingEntry[]>([{ matchType: "TAX_CODE", sourceCode: "", treatment: "STANDARD", blockedCategory: null, drcCategory: null }]);
   const publish = useAction((body: unknown) => api.post(`/entities/${entityId}/mappings`, body), [["mappings", entityId]]);

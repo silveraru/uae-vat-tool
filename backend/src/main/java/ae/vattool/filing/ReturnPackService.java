@@ -88,7 +88,7 @@ public class ReturnPackService {
         ReturnVersionView version = returns.find(period.lockedVersionId()).orElseThrow();
         LegalEntity entity = jdbc.sql(LegalEntity.SELECT + " WHERE id = ?").param(period.entityId()).query(LegalEntity.class).single();
         RulePackDefinition definition = packs.definition(version.rulePackId());
-        boolean draft = !packs.isSignedOff(version.rulePackId());
+        boolean draft = !packs.isSignedOff(version.rulePackId()) || !packs.isClientRulesSignedOff(version.clientRuleVersionId());
         Map<String, BoxValue> boxes = ReturnService.parseValues(version.boxValues());
         CertificateService.Certificate certificate = certificates.build(period);
         List<Approval> approvals = jdbc.sql("""
@@ -108,11 +108,13 @@ public class ReturnPackService {
                 FROM margin_sale WHERE period_id = ? ORDER BY doc_date, doc_number
                 """).param(periodId).query(MarginRow.class).list();
 
-        byte[] json = toJson(entity, period, version, definition, boxes, certificate, approvals, signatures, margin, draft, head);
+        // The pack names every set of rules behind its figures: the firm's pack, and the client's own if it had any.
+        Integer clientRules = packs.clientRulesVersionNo(version.clientRuleVersionId());
+        byte[] json = toJson(entity, period, version, definition, boxes, certificate, approvals, signatures, margin, draft, head, clientRules);
         byte[] xlsx = toXlsx("en", entity, period, version, definition, boxes, certificate, approvals, draft);
-        byte[] pdf = toPdf("en", entity, period, version, definition, boxes, certificate, approvals, signatures, margin, draft, head);
+        byte[] pdf = toPdf("en", entity, period, version, definition, boxes, certificate, approvals, signatures, margin, draft, head, clientRules);
         byte[] xlsxAr = toXlsx("ar", entity, period, version, definition, boxes, certificate, approvals, draft);
-        byte[] pdfAr = toPdf("ar", entity, period, version, definition, boxes, certificate, approvals, signatures, margin, draft, head);
+        byte[] pdfAr = toPdf("ar", entity, period, version, definition, boxes, certificate, approvals, signatures, margin, draft, head, clientRules);
 
         UUID id = UUID.randomUUID();
         String prefix = "t/" + RequestContext.requireTenant() + "/packs/" + periodId + "/" + id + "/";
@@ -167,7 +169,7 @@ public class ReturnPackService {
 
     private static byte[] toJson(LegalEntity e, TaxPeriod p, ReturnVersionView v, RulePackDefinition def, Map<String, BoxValue> boxes,
                                  CertificateService.Certificate cert, List<Approval> approvals, List<Signature> signatures, List<MarginRow> margin,
-                                 boolean draft, String head) {
+                                 boolean draft, String head, Integer clientRules) {
         Map<String, Object> out = new LinkedHashMap<>();
         if (draft) {
             out.put("watermark", WATERMARK);
@@ -175,7 +177,11 @@ public class ReturnPackService {
         out.put("draftRulePack", draft);
         out.put("entity", Map.of("legalName", e.legalName(), "trn", String.valueOf(e.trn())));
         out.put("period", Map.of("start", p.periodStart().toString(), "end", p.periodEnd().toString(), "due", p.dueDate().toString()));
-        out.put("return", Map.of("version", v.versionNo(), "valuesHash", v.valuesHash(), "form", v.formCode() + " " + v.formVersion(), "rulePack", v.rulePackVersion()));
+        Map<String, Object> ret = new LinkedHashMap<>(Map.of("version", v.versionNo(), "valuesHash", v.valuesHash(), "form", v.formCode() + " " + v.formVersion(), "rulePack", v.rulePackVersion()));
+        if (clientRules != null) {
+            ret.put("clientRules", clientRules);
+        }
+        out.put("return", ret);
         List<Map<String, String>> rows = new ArrayList<>();
         for (RulePackDefinition.Box b : def.form().boxes()) {
             BoxValue value = boxes.get(b.code());
@@ -246,14 +252,19 @@ public class ReturnPackService {
     }
 
     private static byte[] toPdf(String lang, LegalEntity e, TaxPeriod p, ReturnVersionView v, RulePackDefinition def, Map<String, BoxValue> boxes,
-                                CertificateService.Certificate cert, List<Approval> approvals, List<Signature> signatures, List<MarginRow> margin, boolean draft, String head) {
+                                CertificateService.Certificate cert, List<Approval> approvals, List<Signature> signatures, List<MarginRow> margin, boolean draft, String head,
+                                Integer clientRules) {
         DocText t = DocText.of(lang);
         StringBuilder h = new StringBuilder();
         h.append("<h1>").append(esc(t.t("pack.title"))).append("</h1><p class=\"meta\">").append(esc(e.legalName())).append(" &#183; ").append(esc(t.t("doc.trn")))
                 .append(" <span class=\"ltr\">").append(esc(e.trn())).append("</span><br/>").append(esc(t.t("pack.taxPeriod"))).append(" <span class=\"ltr\">")
                 .append(p.periodStart()).append(" / ").append(p.periodEnd()).append("</span> &#183; ").append(esc(t.t("doc.due"))).append(" <span class=\"ltr\">").append(p.dueDate())
                 .append("</span><br/>").append(esc(t.t("pack.returnVersion"))).append(" ").append(v.versionNo()).append(" &#183; ").append(esc(t.t("pack.form"))).append(" ")
-                .append(esc(v.formVersion())).append(" &#183; ").append(esc(t.t("pack.rulePack"))).append(" ").append(esc(v.rulePackVersion())).append("</p>");
+                .append(esc(v.formVersion())).append(" &#183; ").append(esc(t.t("pack.rulePack"))).append(" ").append(esc(v.rulePackVersion()));
+        if (clientRules != null) {
+            h.append(" &#183; ").append(esc(t.t("pack.clientRules"))).append(" ").append(clientRules);
+        }
+        h.append("</p>");
 
         h.append("<h2>").append(esc(t.t("pack.valuesHeading"))).append("</h2><table><tr><th>").append(esc(t.t("doc.box"))).append("</th><th>").append(esc(t.t("doc.description")))
                 .append("</th><th class=\"n\">").append(esc(t.t("pack.amount"))).append("</th><th class=\"n\">").append(esc(t.t("pack.vat"))).append("</th><th class=\"n\">")

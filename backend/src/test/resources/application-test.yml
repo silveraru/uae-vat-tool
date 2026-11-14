@@ -11,6 +11,9 @@ app:
     enabled: false
   outbound:
     allow-internal: true
+  # A test that needs the platform's backfill starts a stub here. Otherwise nothing answers, as in an outage.
+  asp:
+    backfill-url: http://localhost:18996
 logging:
   level:
     root: WARN

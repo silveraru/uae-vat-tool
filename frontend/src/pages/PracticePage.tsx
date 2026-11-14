@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
-import type { Counterparty, PracticeOverview, RetentionRow, WatchPosition, WebhookDelivery, WebhookEndpoint } from "../api/types";
+import type { Counterparty, FirmUser, PracticeOverview, RetentionRow, WatchPosition, WebhookDelivery, WebhookEndpoint } from "../api/types";
 import { Query } from "../components/Query";
 import { Badge, ErrorAlert, Field, Money, ReasonAction, useAction, useRoles } from "../components/ui";
 
@@ -15,6 +15,7 @@ export function PracticePage() {
       <h1>{t("practice.title")}</h1>
       <Workload />
       <RegistrationWatch />
+      {roles.isAdmin && <People />}
       {roles.isAdmin && <SupplierRegister />}
       {roles.isAdmin && <FxFeed />}
       {roles.isAdmin && <Webhooks />}
@@ -117,6 +118,58 @@ function RegistrationWatch() {
           <button type="submit" disabled={record.isPending}>{t("common.save")}</button>
         </form>
       )}
+    </section>
+  );
+}
+
+/**
+ * Everyone who can be given access to a client. A person signs in through the identity provider, so they
+ * are created there first and the id it gives them is entered here. Access to clients is granted on each client's page.
+ */
+function People() {
+  const { t } = useTranslation();
+  const key = ["users"];
+  const q = useQuery({ queryKey: key, queryFn: () => api.get<FirmUser[]>("/users") });
+  const blank = { displayName: "", email: "", side: "FIRM", subject: "" };
+  const [form, setForm] = useState(blank);
+  const add = useAction(() => api.post("/users", form), [key]);
+  return (
+    <section className="card">
+      <h2>{t("practice.people")}</h2>
+      <p className="muted">{t("practice.peopleExplain")}</p>
+      <ErrorAlert error={add.error} />
+      {add.isSuccess && <div className="alert ok" role="status">{t("practice.personAdded")}</div>}
+      <Query query={q}>
+        {(rows) => (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>{t("entity.name")}</th><th>{t("entity.email")}</th><th>{t("practice.side")}</th><th>{t("common.status")}</th></tr></thead>
+              <tbody>
+                {rows.map((u) => (
+                  <tr key={u.id}>
+                    <td>{u.displayName}</td><td className="ltr">{u.email}</td><td>{t(`practice.sideValue.${u.side}`)}</td>
+                    <td>{u.active ? <span className="badge ok">{t("practice.active")}</span> : <span className="badge">{t("practice.inactive")}</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Query>
+      <form style={{ marginBlockStart: 12 }} onSubmit={(e) => { e.preventDefault(); add.mutate(undefined, { onSuccess: () => setForm(blank) }); }}>
+        <h3>{t("practice.addPerson")}</h3>
+        <div className="form-grid">
+          <Field label={t("entity.name")}><input required value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} /></Field>
+          <Field label={t("entity.email")}><input type="email" required dir="ltr" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
+          <Field label={t("practice.side")}>
+            <select value={form.side} onChange={(e) => setForm({ ...form, side: e.target.value })}>
+              {["FIRM", "CLIENT", "EXTERNAL"].map((x) => <option key={x} value={x}>{t(`practice.sideValue.${x}`)}</option>)}
+            </select>
+          </Field>
+          <Field label={t("practice.subject")} hint={t("practice.subjectHint")}><input required dir="ltr" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} /></Field>
+        </div>
+        <button type="submit" disabled={add.isPending}>{t("practice.addPerson")}</button>
+      </form>
     </section>
   );
 }

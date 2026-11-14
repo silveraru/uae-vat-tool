@@ -35,7 +35,7 @@ export function DeadlinesPage() {
                     <tr key={r.periodId}>
                       <td><Link to={`/periods/${r.periodId}`}>{r.legalName}</Link></td>
                       <td className="ltr">{formatDate(r.periodEnd)}</td>
-                      <td><span className="ltr">{formatDate(r.dueDate)}</span> <small className="muted">({t("portfolio.daysLeft", { count: r.daysLeft })})</small></td>
+                      <td><span className="ltr">{formatDate(r.dueDate)}</span> <small className="muted">({r.daysLeft < 0 ? t("portfolio.daysOverdue", { count: -r.daysLeft }) : t("portfolio.daysLeft", { count: r.daysLeft })})</small></td>
                       <td><Badge value={r.urgency} group="urgency" /></td>
                       <td><Badge value={r.state} /></td>
                       <td className="num">{r.blockingOpen}</td>

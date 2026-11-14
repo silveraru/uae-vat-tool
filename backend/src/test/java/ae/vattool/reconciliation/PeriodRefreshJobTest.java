@@ -95,12 +95,12 @@ class PeriodRefreshJobTest extends IntegrationTest {
         UUID period = s.cleanJanuary(entity, "1000.00", "50.00");
         ReconciliationService failing = org.mockito.Mockito.mock(ReconciliationService.class);
         org.mockito.Mockito.when(failing.run(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString())).thenThrow(new IllegalStateException("boom"));
-        double before = metrics.counter("vat.recon.failed").count();
+        double before = metrics.counter("vat.recon.failed", "tenant", s.tenant.toString()).count();
         Thread.sleep(50);
 
         new PeriodRefreshJob(jdbc, tx, failing, metrics, 0).tick();
 
-        assertThat(metrics.counter("vat.recon.failed").count()).isGreaterThan(before);
+        assertThat(metrics.counter("vat.recon.failed", "tenant", s.tenant.toString()).count()).isGreaterThan(before);
         long queued = world.queryInTenant(s.tenant, () -> jdbc.sql("SELECT COUNT(*) FROM period_recompute_request WHERE period_id = ?").param(period).query(Long.class).single());
         assertThat(queued).isEqualTo(1);
     }

@@ -85,7 +85,59 @@ export interface FilingPosition {
   payable: string; refundable: boolean; paidAndMatched: string; outstanding: string;
   filing: { submissionRef: string; submittedOn: string; recordedBy: string } | null; payments: Payment[];
 }
-export interface RulePack { id: string; version: string; effectiveFrom: string; status: string; contentHash: string; loadedBy: string; signedOffBy: string | null; signedOffAt: string | null; signOffNote: string | null }
+export interface RulePack {
+  id: string; version: string; effectiveFrom: string; effectiveTo: string | null; status: string; contentHash: string;
+  loadedBy: string; loadedByName: string | null; loadedAt: string; signedOffBy: string | null; signedOffByName: string | null;
+  signedOffAt: string | null; signOffNote: string | null; basedOn: string | null; basedOnVersion: string | null; editNote: string | null;
+  retiredBy: string | null; retiredAt: string | null; retireNote: string | null; inForceToday: boolean;
+}
+export interface RuleWhen {
+  direction?: string | null; goodsOrServices?: string | null; counterpartyInUae?: boolean | null; counterpartyHasTrn?: boolean | null;
+  counterpartyDesignatedZone?: boolean | null; establishmentDesignatedZone?: boolean | null; mappedTreatmentIn?: string[] | null;
+  source?: string | null; descriptionMatches?: string | null;
+}
+export interface RuleThen { treatment?: string | null; placeOfSupply?: string | null; flag?: string | null }
+export interface DecisionRule { id: string; description?: string | null; when: RuleWhen; then: RuleThen }
+export interface PatternRule { id: string; category: string; patterns: string[]; direction?: string | null }
+export interface SuggestionKeyword { pattern: string; treatment: string; confidence: number; reason: string }
+export interface PackBox {
+  code: string; label: Record<string, string>; section: string; entryGuide: Record<string, string> | null;
+  filter: { direction: string | null; treatments: string[] | null; emirate: string | null; blocked: boolean | null } | null;
+  vatMeasure: string | null; sign: number | null; columns: string[]; sumOf: string[] | null; addOf: string[] | null; subtractOf: string[] | null;
+}
+/** Sections are optional because packs from before 1.1 lack some of them. */
+export interface RulePackDefinition {
+  jurisdiction: string; version: string; effectiveFrom: string; effectiveTo: string | null;
+  filing: Record<string, unknown>; rates: { standardPct: number };
+  classification: { rules: DecisionRule[] | null; drcPatterns: PatternRule[] | null; blockedPatterns: PatternRule[] | null } | null;
+  reconciliation: { perInvoiceToleranceAed: number; glToleranceAed: number; boxSwingPct: number; fuzzyDateWindowDays: number; glAccountBoxes: Record<string, string[]> };
+  form: { code: string; version: string; boxes: PackBox[] };
+  penalties: Record<string, unknown>[] | null; disclosure: Record<string, unknown> | null; refund: Record<string, unknown> | null;
+  apportionment: { methods: { method: string; fromTaxYearStarting: string }[]; roundToWholePct: boolean; furtherAdjustmentThresholdAed: number; adjustmentBox: string } | null;
+  capitalAssets: Record<string, unknown> | null; badDebt: Record<string, unknown> | null; marginScheme: { eligibleCategories: string[] } | null;
+  zeroRating: Record<string, unknown> | null; registration: Record<string, unknown> | null;
+  analytics: { newSupplierNetAed: number; zeroRatedGrowthMultiple: number; zeroRatedMinAed: number; trailingPeriods: number } | null;
+  suggestions: { engineVersion: string; historyMinLines: number; keywords: SuggestionKeyword[] | null } | null;
+  faf: { version: string; dateFormat: string; markers: Record<string, string[]> | null; taxCodes: Record<string, string>; outputAmendmentCode: string; inputAmendmentCode: string } | null;
+}
+export interface RulePackView { pack: RulePack; definition: RulePackDefinition; yaml: string }
+export interface RulePackCopy { yaml: string; suggestedVersion: string }
+export interface RulePackChange { path: string; before: string | null; after: string | null }
+export interface RulePackCheck { valid: boolean; problems: string[]; version: string | null; effectiveFrom: string | null; changes: RulePackChange[] }
+export interface ClientRules {
+  classificationRules: DecisionRule[]; drcPatterns: PatternRule[]; blockedPatterns: PatternRule[];
+  switchedOff: { id: string; reason: string }[];
+  reconciliation: { perInvoiceToleranceAed: number | null; glToleranceAed: number | null; boxSwingPct: number | null; fuzzyDateWindowDays: number | null } | null;
+  analytics: { newSupplierNetAed: number | null; zeroRatedGrowthMultiple: number | null; zeroRatedMinAed: number | null; trailingPeriods: number | null } | null;
+  suggestionKeywords: SuggestionKeyword[];
+}
+export interface ClientRuleVersion {
+  id: string; entityId: string; versionNo: number; effectiveFrom: string; content: ClientRules; contentHash: string; note: string; status: string;
+  createdBy: string; createdByName: string | null; createdAt: string; signedOffBy: string | null; signedOffByName: string | null;
+  signedOffAt: string | null; signOffNote: string | null;
+}
+export interface ClientRulesView { firmPack: RulePack; inForce: ClientRuleVersion | null; versions: ClientRuleVersion[] }
+export interface ClientRuleSummary { entityId: string; legalName: string; versionNo: number; effectiveFrom: string; status: string; rules: number }
 export interface AuditResult { intact: boolean; eventsChecked: number; firstBrokenSeq: number | null; problem: string | null; headHash: string | null }
 export interface AuditEvent { seq: number; occurred_at: string; actor_type: string; actor_id: string; action: string; object_type: string; object_id: string; reason: string | null; hash: string }
 export interface AppUser { id: string; displayName: string; email: string }
@@ -109,6 +161,7 @@ export interface RefundRequest {
 }
 export interface RefundPosition {
   refundable: boolean; filed: boolean; excessAed: string; timeLimitOn: string; withinLimit: boolean; transitional: boolean; form: string; request: RefundRequest | null; documents: GeneratedDoc[];
+  earlier: RefundRequest[];
 }
 export interface FafResult { document: GeneratedDoc; purchaseRows: number; supplyRows: number; ledgerRows: number; purchaseVat: string; supplyVat: string; warnings: string[] }
 export interface AuditCase {
@@ -168,3 +221,12 @@ export interface ConnectorRun { id: string; kind: string; fromDate: string; toDa
 export interface RetentionRow { periodId: string; entityId: string; legalName: string; periodEnd: string; state: string; realEstateRecords: boolean; retainUntil: string; expired: boolean; activeHolds: number }
 export interface BundledPack { version: string; installed: boolean }
 export interface Signature { id: string; typedName: string; signerEmail: string; signatureHash: string; signedAt: string }
+export interface LineRevision { line: TaxLine; changedByName: string }
+export interface CertificateRule { ruleId: string; name: string; sets: string; severity: string; open: number; resolved: number; waived: number }
+export interface CertificateWaiver { ruleId: string; message: string; reason: string; approver: string; waivedAt: string }
+export interface Certificate {
+  periodId: string; conclusion: string; lastRunId: string | null; lastRunAt: string | null; rules: CertificateRule[]; waivers: CertificateWaiver[];
+  corner5: { issuedInvoices: number; reportedToFta: number; notReported: number; rejected: number; einvoiceNet: string; einvoiceVat: string; matchedErpNet: string; matchedErpVat: string; vatVariance: string } | null;
+}
+export interface BackfillResult { received: number; applied: number; duplicates: number; unknownEntity: number }
+export interface FirmUser { id: string; subject: string; email: string; displayName: string; side: string; active: boolean }

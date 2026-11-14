@@ -8,11 +8,16 @@ import ae.vattool.platform.storage.VaultStorage;
 import ae.vattool.support.IntegrationTest;
 import ae.vattool.support.Scenario;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.LocalDate;
+import java.util.Random;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.JsonNode;
 
@@ -64,6 +69,45 @@ class TenantKeysTest extends IntegrationTest {
             // A raw 32-byte key would be 44 characters of base64. Wrapped, it also carries the IV and tag.
             assertThat(rs.getInt(2)).isGreaterThan(44);
         }
+    }
+
+    @Test
+    void aLargeFileEncryptedFromDiskReadsBackLikeAnyOtherObject(@TempDir Path dir) throws Exception {
+        UUID a = world.newTenant("A " + UUID.randomUUID());
+        // Larger than the 64 KB the encryption reads at a time, and not a multiple of it.
+        byte[] plain = new byte[3 * 1024 * 1024 + 17];
+        new Random(7).nextBytes(plain);
+        Path source = dir.resolve("plain.bin");
+        Path target = dir.resolve("encrypted.bin");
+        Files.write(source, plain);
+
+        world.queryInTenant(a, () -> {
+            keys.encrypt(source, target);
+            return null;
+        });
+        byte[] stored = Files.readAllBytes(target);
+
+        assertThat(TenantKeys.isEncrypted(stored)).isTrue();
+        assertThat(world.queryInTenant(a, () -> keys.decrypt(stored))).isEqualTo(plain);
+        stored[stored.length / 2] ^= 1;
+        assertThatThrownBy(() -> world.queryInTenant(a, () -> keys.decrypt(stored))).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void aFileStoredFromDiskHasTheSameFingerprintAndContentAsFromMemory(@TempDir Path dir) throws Exception {
+        UUID a = world.newTenant("A " + UUID.randomUUID());
+        byte[] plain = new byte[200_000];
+        new Random(11).nextBytes(plain);
+        Path source = dir.resolve("upload.bin");
+        Files.write(source, plain);
+        String key = "t/" + a + "/test/" + UUID.randomUUID();
+
+        VaultStorage.Stored stored = world.queryInTenant(a, () -> vault.put(key, source, "application/octet-stream", LocalDate.now().plusDays(1)));
+
+        assertThat(stored.sha256()).isEqualTo(VaultStorage.sha256(plain)).isEqualTo(VaultStorage.sha256(source));
+        assertThat(stored.size()).isEqualTo(plain.length);
+        assertThat(TenantKeys.isEncrypted(world.queryInTenant(a, () -> vault.getRaw(key)))).isTrue();
+        assertThat(world.queryInTenant(a, () -> vault.get(key))).isEqualTo(plain);
     }
 
     @Test

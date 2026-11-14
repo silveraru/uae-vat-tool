@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
-import type { BankImport, BankStatement, BankTxn, Batch, ConnectorProfileView, Einvoice, LoadResult, RowView } from "../../api/types";
+import type { BackfillResult, BankImport, BankStatement, BankTxn, Batch, ConnectorProfileView, Einvoice, LoadResult, RowView } from "../../api/types";
 import { Query } from "../../components/Query";
 import { Badge, ErrorAlert, Field, Money, useAction, useRoles } from "../../components/ui";
 import { usePeriod } from "./PeriodLayout";
@@ -126,6 +126,7 @@ function OtherSources({ onLoaded }: { onLoaded: (r: LoadResult) => void }) {
         </div>
       </form>
       <OtherProviderStatuses />
+      {entity.einvoiceGoLive && <Backfill />}
       <form onSubmit={(e) => { e.preventDefault(); const f = bankFile.current?.files?.[0]; if (f) bank.mutate(f, { onSuccess: (r) => { setBankResult(r as BankImport); if (bankFile.current) bankFile.current.value = ""; } }); }}>
         <h3>{t("data.bank")}</h3>
         <p className="muted">{t("data.bankExplain")}</p>
@@ -176,6 +177,29 @@ function OtherSources({ onLoaded }: { onLoaded: (r: LoadResult) => void }) {
         <button type="submit" disabled={exported.isPending || !system}>{t("data.loadExport")}</button>
       </form>
     </section>
+  );
+}
+
+/** Asks the e-invoicing platform to send again what it holds for this client, after an outage or for a new client. */
+function Backfill() {
+  const { t } = useTranslation();
+  const { entity, periodId, view } = usePeriod();
+  const [range, setRange] = useState({ from: view.period.periodStart, to: view.period.periodEnd });
+  const [result, setResult] = useState<BackfillResult | null>(null);
+  const run = useAction(() => api.post<BackfillResult>(`/entities/${entity.id}/einvoices/backfill?from=${range.from}&to=${range.to}`),
+    [["einvoices", entity.id], ["exceptions", periodId], ["return", periodId]]);
+  return (
+    <form style={{ marginBlockEnd: 16 }} onSubmit={(e) => { e.preventDefault(); run.mutate(undefined, { onSuccess: (r) => setResult(r as BackfillResult) }); }}>
+      <h3>{t("data.backfill")}</h3>
+      <p className="muted">{t("data.backfillExplain")}</p>
+      <ErrorAlert error={run.error} />
+      {result && <div className="alert ok" role="status">{t("data.backfillResult", { received: result.received, applied: result.applied, duplicates: result.duplicates })}</div>}
+      <div className="row">
+        <Field label={t("connectors.from")}><input type="date" required value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} /></Field>
+        <Field label={t("connectors.to")}><input type="date" required value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} /></Field>
+        <button type="submit" disabled={run.isPending}>{t("data.backfillRun")}</button>
+      </div>
+    </form>
   );
 }
 

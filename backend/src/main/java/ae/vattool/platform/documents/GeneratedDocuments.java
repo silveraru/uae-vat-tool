@@ -4,6 +4,7 @@ import ae.vattool.platform.audit.AuditLog;
 import ae.vattool.platform.storage.VaultStorage;
 import ae.vattool.platform.tenancy.RequestContext;
 import ae.vattool.platform.web.DomainException;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -45,8 +46,23 @@ public class GeneratedDocuments {
     @Transactional
     public Doc store(UUID entityId, UUID periodId, String kind, Object objectId, String fileName, String contentType, byte[] content, boolean draft) {
         UUID id = UUID.randomUUID();
-        String key = "t/" + RequestContext.requireTenant() + "/documents/" + entityId + "/" + kind.toLowerCase() + "/" + id + "/" + fileName.replaceAll("[^A-Za-z0-9._-]", "_");
-        VaultStorage.Stored stored = vault.put(key, content, contentType, LocalDate.now().plusYears(RETENTION_YEARS));
+        String key = key(entityId, kind, id, fileName);
+        return record(id, entityId, periodId, kind, objectId, fileName, contentType, key, vault.put(key, content, contentType, LocalDate.now().plusYears(RETENTION_YEARS)), draft);
+    }
+
+    /** As the other store, for a document written to a file because it is too large to build in memory. */
+    @Transactional
+    public Doc store(UUID entityId, UUID periodId, String kind, Object objectId, String fileName, String contentType, Path content, boolean draft) {
+        UUID id = UUID.randomUUID();
+        String key = key(entityId, kind, id, fileName);
+        return record(id, entityId, periodId, kind, objectId, fileName, contentType, key, vault.put(key, content, contentType, LocalDate.now().plusYears(RETENTION_YEARS)), draft);
+    }
+
+    private static String key(UUID entityId, String kind, UUID id, String fileName) {
+        return "t/" + RequestContext.requireTenant() + "/documents/" + entityId + "/" + kind.toLowerCase() + "/" + id + "/" + fileName.replaceAll("[^A-Za-z0-9._-]", "_");
+    }
+
+    private Doc record(UUID id, UUID entityId, UUID periodId, String kind, Object objectId, String fileName, String contentType, String key, VaultStorage.Stored stored, boolean draft) {
         jdbc.sql("""
                 INSERT INTO generated_document (id, tenant_id, entity_id, period_id, kind, object_id, file_name, content_type, storage_key, sha256, size_bytes, draft_rules, created_by)
                 VALUES (:id, :tenant, :entity, :period, :kind, :object, :file, :type, :key, :sha, :size, :draft, :by)

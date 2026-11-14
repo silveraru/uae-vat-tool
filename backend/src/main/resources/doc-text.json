@@ -167,6 +167,10 @@
   "en": "Rule pack",
   "ar": "حزمة القواعد"
  },
+ "pack.clientRules": {
+  "en": "Client rules version",
+  "ar": "قواعد العميل، الإصدار"
+ },
  "pack.valuesHeading": {
   "en": "VAT201 values and how to enter them",
   "ar": "قيم الإقرار VAT201 وطريقة إدخالها"

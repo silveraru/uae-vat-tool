@@ -108,6 +108,55 @@ class IngestionTest extends IntegrationTest {
     }
 
     @Test
+    void aFileOfSeveralChunksLoadsEveryRowAndKeepsEachRowsOwnNumber() throws Exception {
+        // Rows are loaded 500 at a time, so this file spans three chunks, with a bad row in the third.
+        StringBuilder csv = new StringBuilder(HEAD);
+        for (int i = 1; i <= 1205; i++) {
+            csv.append("TAX_INVOICE,BIG-").append(i).append(",2027-01-05,").append(i == 1103 ? "abc" : "100.00")
+                    .append(",5.00,S5,DXB-1,100000000000901,B2B,,1,,\n");
+        }
+
+        JsonNode r = client.uploadCsv(entity, "AR", csv.toString());
+
+        assertThat(r.get("batch").get("rowsTotal").asInt()).isEqualTo(1205);
+        assertThat(r.get("batch").get("rowsLoaded").asInt()).isEqualTo(1204);
+        assertThat(r.get("batch").get("rowsRejected").asInt()).isEqualTo(1);
+        assertThat(currentLines()).isEqualTo(1204);
+        JsonNode rejected = client.get(preparer, "/api/entities/" + entity + "/ingest/batches/" + r.get("batch").get("id").asString() + "/rows?status=REJECTED");
+        assertThat(rejected).hasSize(1);
+        assertThat(rejected.get(0).get("rowNo").asInt()).isEqualTo(1103);
+        assertThat(rejected.get(0).get("raw").asString()).contains("BIG-1103");
+    }
+
+    @Test
+    void aDamagedFileIsRefusedBeforeAnyOfItLoads() throws Exception {
+        // The quote opened on the last row is never closed. Every row above it is fine.
+        StringBuilder csv = new StringBuilder(HEAD);
+        for (int i = 1; i <= 800; i++) {
+            csv.append("TAX_INVOICE,D-").append(i).append(",2027-01-05,100.00,5.00,S5,DXB-1,100000000000901,B2B,,1,,\n");
+        }
+        csv.append("TAX_INVOICE,\"D-801,2027-01-05,100.00,5.00,S5,DXB-1,100000000000901,B2B,,1,,\n");
+
+        client.uploadRaw(entity, "AR", "damaged.csv", csv.toString().getBytes())
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("FILE_UNREADABLE"));
+
+        assertThat(currentLines()).isZero();
+        assertThat(client.get(preparer, "/api/entities/" + entity + "/ingest/batches")).isEmpty();
+    }
+
+    @Test
+    void aFileSavedWithAByteOrderMarkLoads() throws Exception {
+        // Excel's "CSV UTF-8" puts three bytes before the first column name.
+        byte[] csv = ("\uFEFF" + HEAD + "TAX_INVOICE,BOM1,2027-01-05,100.00,5.00,S5,DXB-1,100000000000901,B2B,,1,,\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        JsonNode r = client.upload(entity, "AR", "excel.csv", csv);
+
+        assertThat(r.get("batch").get("rowsLoaded").asInt()).isEqualTo(1);
+        assertThat(world.queryInTenant(tenant, () -> vault.get(r.get("batch").get("storageKey").asString()))).isEqualTo(csv);
+    }
+
+    @Test
     void aTaxPointBeforeTheFirstPeriodIsRejected() throws Exception {
         JsonNode r = client.uploadCsv(entity, "AR", HEAD + "TAX_INVOICE,OLD,2026-12-31,100.00,5.00,S5,DXB-1,100000000000901,B2B,,1,,\n");
 

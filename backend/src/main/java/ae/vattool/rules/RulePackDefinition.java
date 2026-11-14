@@ -109,6 +109,7 @@ public record RulePackDefinition(
     /** One row of the decision table. All conditions present must hold; absent ones are ignored. */
     public record DecisionRule(String id, String description, When when, Then then) {}
 
+    /** descriptionMatches is a regular expression, matched case-insensitively anywhere in the line description. */
     public record When(
             String direction,
             String goodsOrServices,
@@ -117,7 +118,18 @@ public record RulePackDefinition(
             Boolean counterpartyDesignatedZone,
             Boolean establishmentDesignatedZone,
             List<String> mappedTreatmentIn,
-            String source) {}
+            String source,
+            String descriptionMatches) {
+
+        /** A rule with no condition would match every line, which is never meant. */
+        @com.fasterxml.jackson.annotation.JsonIgnore
+        public boolean isEmpty() {
+            return direction == null && goodsOrServices == null && counterpartyInUae == null && counterpartyHasTrn == null
+                    && counterpartyDesignatedZone == null && establishmentDesignatedZone == null
+                    && (mappedTreatmentIn == null || mappedTreatmentIn.isEmpty()) && source == null
+                    && (descriptionMatches == null || descriptionMatches.isBlank());
+        }
+    }
 
     public record Then(String treatment, String placeOfSupply, String flag) {}
 

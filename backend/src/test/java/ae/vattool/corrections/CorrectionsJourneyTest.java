@@ -292,7 +292,12 @@ class CorrectionsJourneyTest extends IntegrationTest {
                 .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("REASON_REQUIRED"));
         s.client.post(s.reviewer, "/api/refunds/" + id + "/decision", Map.of("approved", false, "decidedOn", "2027-03-20", "note", "Missing documents"));
 
-        assertThat(s.client.post(s.reviewer, "/api/periods/" + p + "/refund", null).get("request").get("status").asString()).isEqualTo("DRAFT");
+        JsonNode again = s.client.post(s.reviewer, "/api/periods/" + p + "/refund", null);
+        assertThat(again.get("request").get("status").asString()).isEqualTo("DRAFT");
+        // The rejected claim and the FTA's reason stay on the period beside the new one.
+        assertThat(again.get("earlier")).hasSize(1);
+        assertThat(again.get("earlier").get(0).get("status").asString()).isEqualTo("REJECTED");
+        assertThat(again.get("earlier").get(0).get("decisionNote").asString()).isEqualTo("Missing documents");
     }
 
     @Test

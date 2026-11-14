@@ -94,7 +94,8 @@ public class Notifier {
             m.setText(body);
             mail.send(m);
         } catch (RuntimeException e) {
-            metrics.counter("vat.notify.mail_failed").increment();
+            UUID tenant = RequestContext.tenantOrNull();
+            metrics.counter("vat.notify.mail_failed", "tenant", tenant == null ? "none" : tenant.toString()).increment();
             log.warn("Could not send an email to {}: {}", r.id(), e.getMessage());
         }
     }

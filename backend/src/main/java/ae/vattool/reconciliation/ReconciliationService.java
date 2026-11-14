@@ -10,6 +10,7 @@ import ae.vattool.returns.ReturnService;
 import ae.vattool.returns.ReturnVersionView;
 import ae.vattool.rules.RulePackStore;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -110,6 +111,8 @@ public class ReconciliationService {
                 .param("pack", pack.meta().version()).param("summary", JSON.writeValueAsString(byRule)).param("started", started)
                 .update();
         metrics.counter("vat.recon.runs", "tenant", RequestContext.requireTenant().toString(), "trigger", trigger).increment();
+        metrics.timer("vat.recon.duration", "tenant", RequestContext.requireTenant().toString(), "trigger", trigger)
+                .record(Duration.between(started, OffsetDateTime.now()));
         audit.record("RECONCILIATION_RUN", "RECON_RUN", runId, period.entityId(), null,
                 Map.of("findings", findings.size(), "blockingOpen", blocking, "warningsOpen", warnings, "reopened", counts[1],
                         "closedByRun", counts[0]), trigger);

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
-import type { AppUser, MatchProposal, ReconException, ReconSummary, TimingItem } from "../../api/types";
+import type { AppUser, Certificate, MatchProposal, ReconException, ReconSummary, TimingItem } from "../../api/types";
 import { Query } from "../../components/Query";
 import { Badge, ErrorAlert, Field, Money, ReasonAction, useAction, useRoles } from "../../components/ui";
 import { usePeriod } from "./PeriodLayout";
@@ -95,7 +95,60 @@ export function ExceptionsTab() {
         )}
       </Query>
       <TimingItems locked={locked} />
+      <CertificateCard />
     </>
+  );
+}
+
+/** The reconciliation certificate as it stands: what every check found, what was waived and why, and Corner 5 against the books. */
+function CertificateCard() {
+  const { t } = useTranslation();
+  const { periodId } = usePeriod();
+  const q = useQuery({ queryKey: ["certificate", periodId], queryFn: () => api.get<Certificate>(`/periods/${periodId}/certificate`) });
+  return (
+    <section className="card">
+      <h2>{t("certificate.title")}</h2>
+      <p className="muted">{t("certificate.explain")}</p>
+      <Query query={q}>
+        {(c) => {
+          const touched = c.rules.filter((r) => r.open + r.resolved + r.waived > 0);
+          return (
+            <>
+              <p>
+                <Badge value={c.conclusion} group="certificate.conclusion" />
+                {c.lastRunAt && <> <small className="muted">{t("certificate.lastRun", { when: c.lastRunAt.slice(0, 16).replace("T", " ") })}</small></>}
+              </p>
+              {c.corner5 && c.corner5.issuedInvoices > 0 && (
+                <p>{t("certificate.corner5", { issued: c.corner5.issuedInvoices, reported: c.corner5.reportedToFta, notReported: c.corner5.notReported, rejected: c.corner5.rejected })}{" "}
+                  {t("certificate.variance")} <Money value={c.corner5.vatVariance} /></p>
+              )}
+              {touched.length === 0 ? <p className="muted">{t("certificate.clean")}</p> : (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>{t("exceptions.check")}</th><th>{t("exceptions.severity")}</th><th className="num">{t("certificate.open")}</th><th className="num">{t("certificate.resolved")}</th><th className="num">{t("certificate.waived")}</th></tr></thead>
+                    <tbody>
+                      {touched.map((r) => (
+                        <tr key={r.ruleId}>
+                          <td>{r.ruleId} <small className="muted">{t(`rule.${r.ruleId}`)}</small></td>
+                          <td><Badge value={r.severity} group="severity" /></td>
+                          <td className="num">{r.open}</td><td className="num">{r.resolved}</td><td className="num">{r.waived}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {c.waivers.length > 0 && (
+                <>
+                  <h3>{t("certificate.waivers")}</h3>
+                  <ul>{c.waivers.map((w) => <li key={w.ruleId + w.waivedAt}><strong>{w.ruleId}</strong> {w.message}<br /><small className="muted">{w.reason}</small></li>)}</ul>
+                </>
+              )}
+            </>
+          );
+        }}
+      </Query>
+    </section>
   );
 }
 

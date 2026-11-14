@@ -6,6 +6,7 @@ import type { LinesPage } from "../../api/types";
 import { Query } from "../../components/Query";
 import { Badge, ErrorAlert, Field, Money, Pager, useAction, useRoles } from "../../components/ui";
 import { usePeriod } from "./PeriodLayout";
+import { LineagePanel } from "./ReturnTab";
 
 const TREATMENTS = ["STANDARD", "ZERO_RATED", "EXEMPT", "OUT_OF_SCOPE", "REVERSE_CHARGE", "IMPORT", "DRC", "TOURIST_REFUND"];
 const REASONS = ["WRONG_TAX_CODE", "PLACE_OF_SUPPLY", "DRC_CONFIRMED", "BLOCKED_CONFIRMED", "BLOCKED_REMOVED", "RECOVERY_RATE", "CONFIRMED_AS_IS", "OTHER"];
@@ -17,6 +18,7 @@ export function LinesTab() {
   const [filter, setFilter] = useState({ treatment: "", direction: "", search: "", flagged: false });
   const [page, setPage] = useState(0);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [open, setOpen] = useState<string | null>(null);
   const [change, setChange] = useState({ treatment: "STANDARD", blockedCategory: "", recoveryPct: "", reasonCode: "WRONG_TAX_CODE", reason: "" });
   const params = new URLSearchParams({ page: String(page), size: "50" });
   if (filter.treatment) params.set("treatment", filter.treatment);
@@ -65,7 +67,11 @@ export function LinesTab() {
                     {canEdit && <td><input type="checkbox" style={{ width: "auto" }} aria-label={t("lines.selectLine", { line: l.description ?? l.id.slice(0, 8) })} checked={chosen.has(l.id)} onChange={() => toggle(l.id)} disabled={l.lineKind !== "NORMAL"} /></td>}
                     <td className="ltr">{l.taxPoint}</td>
                     <td>{t(`direction.${l.direction}`)}</td>
-                    <td>{l.description ?? l.counterpartyTrn ?? "–"}</td>
+                    <td>
+                      <button type="button" className="linklike" aria-expanded={open === l.id} aria-label={t("lines.showHistory", { line: l.description ?? l.id.slice(0, 8) })}
+                        onClick={() => setOpen(open === l.id ? null : l.id)}>{l.description ?? l.counterpartyTrn ?? "–"}</button>
+                      {l.revision > 1 && <> <small className="muted">{t("lines.revisedTimes", { count: l.revision - 1 })}</small></>}
+                    </td>
                     <td className="ltr">{l.taxCode ?? "–"}{l.glAccount ? ` / ${l.glAccount}` : ""}</td>
                     <td><Badge value={l.treatment} group="treatment" />{l.blockedCategory && <><br /><small className="muted">{t("lines.blocked")}: {l.blockedCategory}</small></>}{l.memo && <><br /><small className="muted">{t("lines.memo")}</small></>}</td>
                     <td className="num"><Money value={l.netAed} /></td>
@@ -78,6 +84,7 @@ export function LinesTab() {
             </table>
             {d.rows.length === 0 && <p className="muted">{t("common.none")}</p>}
             <Pager page={d.page} size={d.size} total={d.total} onPage={setPage} />
+            {open && d.rows.some((r) => r.id === open) && <LineagePanel lineId={open} />}
           </div>
         )}
       </Query>

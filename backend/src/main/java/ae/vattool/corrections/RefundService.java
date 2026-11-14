@@ -54,8 +54,9 @@ public class RefundService {
                 """;
     }
 
+    /** earlier holds requests the FTA rejected, newest first, so a new claim does not hide what happened to the last one. */
     public record Position(boolean refundable, boolean filed, BigDecimal excessAed, LocalDate timeLimitOn, boolean withinLimit, boolean transitional,
-                           String form, Request request, List<GeneratedDocuments.Doc> documents) {}
+                           String form, Request request, List<GeneratedDocuments.Doc> documents, List<Request> earlier) {}
 
     public record CreateInput(BigDecimal amountAed) {}
 
@@ -104,8 +105,10 @@ public class RefundService {
         BigDecimal excess = excess(p);
         RefundRules.Limit limit = RefundRules.check(rule, p.periodEnd(), LocalDate.now(clock));
         Optional<Request> request = current(periodId);
+        List<Request> earlier = jdbc.sql(Request.SELECT + " WHERE period_id = ? AND status = 'REJECTED' ORDER BY created_at DESC").param(periodId)
+                .query(Request.class).list();
         return new Position(excess.signum() > 0, FILED_STATES.contains(p.state()), excess, limit.limitOn(), limit.allowed(), limit.transitional(), rule.form(),
-                request.orElse(null), request.map(r -> documents.forObject(r.id().toString())).orElse(List.of()));
+                request.orElse(null), request.map(r -> documents.forObject(r.id().toString())).orElse(List.of()), earlier);
     }
 
     @Transactional

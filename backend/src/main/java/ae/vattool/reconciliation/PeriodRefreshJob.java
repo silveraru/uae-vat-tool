@@ -60,7 +60,7 @@ public class PeriodRefreshJob {
             try {
                 reconciliation.run(period, "DATA_CHANGE");
             } catch (RuntimeException e) {
-                metrics.counter("vat.recon.failed").increment();
+                metrics.counter("vat.recon.failed", "tenant", tenant.toString()).increment();
                 log.error("Could not refresh period {} in tenant {}", period, tenant, e);
             }
         }

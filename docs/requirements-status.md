@@ -16,7 +16,7 @@ All 58 requirements now have code behind them. What stands between that and real
 | ONB-04 | Versioned tax code and GL mapping | Done | Also matches on supplier TRN for blocked input. |
 | ONB-05 | Tax agent and signatories | Done | |
 | ING-01 | E-invoice platform events | Done against the simulator | The real platform is not connected. Contract in `contracts/`. |
-| ING-03 | ERP via REST, SFTP, CSV, XLSX | Done | Uploads are read into memory. The SFTP path is covered by a test of the poller; see the load test notes for the container check. |
+| ING-03 | ERP via REST, SFTP, CSV, XLSX | Done | A CSV, by upload or SFTP, is read twice from a temporary file: once to check every row parses, so a damaged file is refused before any of it loads, then 500 rows at a time. An XLSX is still read whole, so very large files should come as CSV. The SFTP path is covered by a test of the poller; see the load test notes for the container check. |
 | ING-05 | Customs declarations | Done | |
 | ING-07 | Validation, duplicates, idempotent reload, lineage | Done | |
 | ING-08 | FX at the Central Bank rate per line | Partial | Rates load by upload, or from a feed URL if one is configured. No public Central Bank API was found, so no source is built in (question 28). A missing rate holds the row and blocks approval. |
@@ -70,7 +70,7 @@ default and has not been run against the real network: DNS was not reachable fro
 | COR-02 | Form 211 pack | S | Done | Original and corrected figures, deadline, approval by a second person, then submission and settlement. |
 | COR-03 | Penalty calculator | S | Done | Effective-dated. Reproduces the published worked examples. Says it cannot estimate before 14 April 2026, and never guesses. Firm-only: external auditors cannot see it. |
 | COR-04 | Refund pack | S | Done | Time limit check, pack, then submission, decision and receipt. |
-| AUD-01 | FTA Audit File | S | Done | Tables and fields from the FTA's own software requirements document (October 2017). Section markers and some codes are unconfirmed, and held in the rule pack (question 18). Its general ledger needs journal lines loaded through the new template. |
+| AUD-01 | FTA Audit File | S | Done | Tables and fields from the FTA's own software requirements document (October 2017). Section markers and some codes are unconfirmed, and held in the rule pack (question 18). Its general ledger needs journal lines loaded through the new template. Written to a temporary file as rows are read, so its size does not set the heap. |
 | AUD-03 | Audit case tracker | C | Done | Requests, deadlines, reminders, a checked bundle, and legal holds placed automatically. |
 | ANL-01 | Trends | S | Done | |
 | ANL-02 | Anomaly flags | S | Done | Thresholds are in the rule pack. |
@@ -103,7 +103,7 @@ All five now run end to end, and are covered by browser tests against the real s
 | NFR-07 | Performance | Measured on one laptop: see `load-test-results.md`. Ingest, recompute and API response meet their targets there. **Drill-down on a 5M line period does not:** p95 6.1 s against 2 s. Not evidence of production performance. |
 | NFR-08 | Availability | Not done: a production matter |
 | NFR-09 | Scale | Tested at the design point on one laptop: see `load-test-results.md`. Several workers can run at once: recomputes take the period lock, reminders claim their row before sending, and webhook deliveries are taken on a lease. |
-| NFR-10 | Regulatory agility | Done. Tested by changing the form through a new pack with no code. |
+| NFR-10 | Regulatory agility | Done. Tested by changing the form through a new pack with no code. An admin reads a pack section by section and edits it as a copy, which is checked and shown as a list of changes before it is saved as a new draft version. A version saved by mistake can be retired. Client rules add rules, switch off firm rules and move review thresholds for one client, versioned and signed off like the pack. They cannot change the law in the pack. |
 | NFR-11 | Localisation | English and Arabic right-to-left, including server errors, notifications and the PDF and XLSX packs. All the Arabic is an unreviewed draft and needs a native review, tax terms above all. Free-form server detail, such as reconciliation messages, stays in English beside the translated heading. |
 | NFR-12 | Accessibility | Automated checks pass on all main screens in both languages. A manual audit is still needed. |
 | NFR-13 | Certification | Not done |
@@ -112,13 +112,21 @@ All five now run end to end, and are covered by browser tests against the real s
 
 ## Actions with no screen yet
 
-Everything in the core journeys has a screen. These work through the API only:
+Everything in the core journeys has a screen. Six actions that were API-only now have one too:
 
-- **Adding a person to the firm** (`POST /api/users`). They are first created in the identity provider, and their
-  id there is given to this call. Giving an existing person access to a client has a screen.
-- **Asking the e-invoice platform to resend events** (`POST /api/entities/{id}/einvoices/backfill`), for a new client or after an outage.
-- **The REST route for ERP rows** (`POST /api/entities/{id}/ingest/{kind}/rows`), which is for systems and not people.
-- **The history of one ledger line** (`GET /api/lines/{id}/history`) and **the reconciliation certificate on its own** (`GET /api/periods/{id}/certificate`). The certificate is also in the return pack.
+- **Reading the rule pack:** each version opens from the Rule packs page, rule by rule, with its source. Anyone working on
+  a client can read the rules that apply to it in the client's Rules card.
+- **Changing the rule pack:** Edit a copy on a version's page. The editor takes a whole new pack pasted in too, so the
+  YAML upload route is now only needed by scripts.
+
+- **Adding a person to the firm:** the People section of the Practice page, for an administrator. The person is still
+  created in the identity provider first, and the id it gives them is entered here.
+- **Asking the e-invoicing platform to resend events:** the Data tab of a client on e-invoicing. It now asks only for that
+  client's own TRN and applies only events for it, where before it took any TRN in the tenant.
+- **The history of one ledger line:** under the source of a line in the drill-down, and from any line on the Lines tab.
+- **The reconciliation certificate on its own:** at the foot of the Exceptions tab.
+
+Only **the REST route for ERP rows** (`POST /api/entities/{id}/ingest/{kind}/rows`) stays API-only, because it is for systems and not people.
 
 ## Deviations from the spec's architecture
 

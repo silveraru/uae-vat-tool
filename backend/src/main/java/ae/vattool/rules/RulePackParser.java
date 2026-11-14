@@ -16,7 +16,7 @@ public final class RulePackParser {
             .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .build();
 
-    private static final Set<String> TREATMENTS = Set.of("STANDARD", "ZERO_RATED", "EXEMPT", "OUT_OF_SCOPE",
+    static final Set<String> TREATMENTS = Set.of("STANDARD", "ZERO_RATED", "EXEMPT", "OUT_OF_SCOPE",
             "REVERSE_CHARGE", "IMPORT", "IMPORT_ADJUSTMENT", "DRC", "TOURIST_REFUND");
 
     private RulePackParser() {}
@@ -26,7 +26,10 @@ public final class RulePackParser {
         try {
             pack = YAML.readValue(yaml, RulePackDefinition.class);
         } catch (JacksonException e) {
-            throw DomainException.invalid("RULE_PACK_INVALID", "Rule pack could not be read: " + e.getOriginalMessage());
+            // The line and column point a person editing the pack at the mistake.
+            String where = e.getLocation() == null || e.getLocation().getLineNr() < 1 ? ""
+                    : " (line " + e.getLocation().getLineNr() + ", column " + e.getLocation().getColumnNr() + ")";
+            throw DomainException.invalid("RULE_PACK_INVALID", "Rule pack could not be read" + where + ": " + e.getOriginalMessage());
         }
         List<String> problems = validate(pack);
         if (!problems.isEmpty()) {
@@ -82,13 +85,9 @@ public final class RulePackParser {
                         .forEach(t -> problems.add("box " + box.code() + " uses unknown treatment " + t));
             }
         }
-        if (pack.classification() != null && pack.classification().rules() != null) {
-            for (RulePackDefinition.DecisionRule rule : pack.classification().rules()) {
-                if (rule.then() != null && rule.then().treatment() != null
-                        && !TREATMENTS.contains(rule.then().treatment())) {
-                    problems.add("rule " + rule.id() + " uses unknown treatment " + rule.then().treatment());
-                }
-            }
+        if (pack.classification() != null) {
+            problems.addAll(validateClassification(pack.classification().rules(), pack.classification().drcPatterns(),
+                    pack.classification().blockedPatterns(), "rule"));
         }
         if (pack.penalties() != null) {
             for (RulePackDefinition.PenaltySchedule p : pack.penalties()) {
@@ -114,5 +113,59 @@ public final class RulePackParser {
             }
         }
         return problems;
+    }
+
+    /** Shared with client rules, which add rows of the same shape. */
+    static List<String> validateClassification(List<RulePackDefinition.DecisionRule> rules, List<RulePackDefinition.PatternRule> drc,
+                                               List<RulePackDefinition.PatternRule> blocked, String what) {
+        List<String> problems = new ArrayList<>();
+        Set<String> ids = new HashSet<>();
+        for (RulePackDefinition.DecisionRule rule : rules == null ? List.<RulePackDefinition.DecisionRule>of() : rules) {
+            if (rule.id() == null || rule.id().isBlank()) {
+                problems.add("every " + what + " needs an id");
+                continue;
+            }
+            if (!ids.add(rule.id())) {
+                problems.add(what + " " + rule.id() + " is defined twice");
+            }
+            if (rule.when() == null || rule.when().isEmpty()) {
+                problems.add(what + " " + rule.id() + " has no condition, so it would match every line");
+            } else if (rule.when().descriptionMatches() != null && !compiles(rule.when().descriptionMatches())) {
+                problems.add(what + " " + rule.id() + " has a description pattern that is not a valid regular expression");
+            }
+            if (rule.then() == null || (rule.then().treatment() == null && rule.then().placeOfSupply() == null && rule.then().flag() == null)) {
+                problems.add(what + " " + rule.id() + " sets nothing: give it a treatment, a place of supply or a flag");
+            } else if (rule.then().treatment() != null && !TREATMENTS.contains(rule.then().treatment())) {
+                problems.add(what + " " + rule.id() + " uses unknown treatment " + rule.then().treatment());
+            }
+        }
+        for (List<RulePackDefinition.PatternRule> list : List.of(drc == null ? List.<RulePackDefinition.PatternRule>of() : drc,
+                blocked == null ? List.<RulePackDefinition.PatternRule>of() : blocked)) {
+            for (RulePackDefinition.PatternRule p : list) {
+                if (p.id() == null || p.id().isBlank() || p.category() == null || p.category().isBlank()) {
+                    problems.add("every pattern needs an id and a category");
+                    continue;
+                }
+                if (!ids.add(p.id())) {
+                    problems.add("pattern " + p.id() + " is defined twice");
+                }
+                if (p.patterns() == null || p.patterns().isEmpty()) {
+                    problems.add("pattern " + p.id() + " lists no patterns");
+                } else {
+                    p.patterns().stream().filter(x -> !compiles(x))
+                            .forEach(x -> problems.add("pattern " + p.id() + ": " + x + " is not a valid regular expression"));
+                }
+            }
+        }
+        return problems;
+    }
+
+    static boolean compiles(String pattern) {
+        try {
+            java.util.regex.Pattern.compile(pattern);
+            return true;
+        } catch (java.util.regex.PatternSyntaxException e) {
+            return false;
+        }
     }
 }

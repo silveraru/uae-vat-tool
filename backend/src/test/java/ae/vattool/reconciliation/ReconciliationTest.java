@@ -697,6 +697,65 @@ class ReconciliationTest extends IntegrationTest {
     }
 
     @Test
+    void aLinesHistoryShowsEachRevisionWithWhoChangedItAndWhy() throws Exception {
+        sale("A1", "2027-01-05", "100.00", "5.00");
+        JsonNode line = client.get(preparer, "/api/periods/" + january + "/lines").get("rows").get(0);
+        client.post(preparer, "/api/periods/" + january + "/reclassify", Map.of("lineIds", List.of(line.get("id").asString()), "treatment", "EXEMPT",
+                "reasonCode", "WRONG_TAX_CODE", "reason", "Residential"));
+
+        JsonNode history = client.get(preparer, "/api/lines/" + line.get("logicalLineId").asString() + "/history");
+
+        assertThat(history).hasSize(2);
+        assertThat(history.get(0).get("line").get("treatment").asString()).isEqualTo("STANDARD");
+        assertThat(history.get(1).get("line").get("treatment").asString()).isEqualTo("EXEMPT");
+        assertThat(history.get(1).get("line").get("changeReason").asString()).isEqualTo("Residential");
+        assertThat(history.get(1).get("changedByName").asString()).isEqualTo("User " + preparer.id());
+    }
+
+    @Test
+    void aBackfillAsksOnlyForThisEntitysOwnEinvoicesAndSaysWhenThePlatformIsDown() throws Exception {
+        client.postRaw(preparer, "/api/entities/" + entity + "/einvoices/backfill?trn=100000000000999&from=2027-01-01&to=2027-01-31", null)
+                .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("BACKFILL_TRN_MISMATCH"));
+        client.postRaw(preparer, "/api/entities/" + entity + "/einvoices/backfill?from=2027-01-31&to=2027-01-01", null)
+                .andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("RANGE_INVALID"));
+        // Nothing listens at the platform's test address unless a test starts it, which is what an outage looks like.
+        client.postRaw(preparer, "/api/entities/" + entity + "/einvoices/backfill?from=2027-01-01&to=2027-01-31", null)
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ASP_UNREACHABLE"));
+    }
+
+    @Test
+    void aBackfillAppliesThisEntitysEventsAndIgnoresAnyoneElses() throws Exception {
+        sale("A1", "2027-01-05", "100.00", "5.00");
+        UUID mine = UUID.randomUUID();
+        List<EinvoiceEvent> sent = List.of(
+                new EinvoiceEvent("1.0", UUID.randomUUID(), EinvoiceEvent.ISSUED, OffsetDateTime.parse("2027-01-05T08:00:00Z"), tenant, trn, mine,
+                        new EinvoiceEvent.Invoice("INVOICE", "A1", LocalDate.parse("2027-01-05"), trn, CUSTOMER, "AED", new BigDecimal("100.00"), new BigDecimal("5.00"), null), null, null),
+                new EinvoiceEvent("1.0", UUID.randomUUID(), EinvoiceEvent.ISSUED, OffsetDateTime.parse("2027-01-06T08:00:00Z"), tenant, "100000000000999", UUID.randomUUID(),
+                        new EinvoiceEvent.Invoice("INVOICE", "X9", LocalDate.parse("2027-01-06"), "100000000000999", CUSTOMER, "AED", BigDecimal.TEN, BigDecimal.ONE, null), null, null));
+        byte[] body = tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsBytes(sent);
+        List<String> asked = new ArrayList<>();
+        com.sun.net.httpserver.HttpServer platform = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("localhost", 18996), 0);
+        platform.createContext("/backfill", x -> {
+            asked.add(x.getRequestURI().getQuery());
+            x.getResponseHeaders().set("Content-Type", "application/json");
+            x.sendResponseHeaders(200, body.length);
+            x.getResponseBody().write(body);
+            x.close();
+        });
+        platform.start();
+        try {
+            JsonNode result = client.post(preparer, "/api/entities/" + entity + "/einvoices/backfill?from=2027-01-01&to=2027-01-31", null);
+
+            assertThat(result.get("received").asInt()).isEqualTo(2);
+            assertThat(result.get("applied").asInt()).isEqualTo(1);
+            assertThat(asked.getFirst()).contains("entityTrn=" + trn);
+            assertThat(world.queryInTenant(tenant, () -> jdbc.sql("SELECT count(*) FROM einvoice WHERE invoice_uuid = ?").param(mine).query(Integer.class).single())).isEqualTo(1);
+        } finally {
+            platform.stop(0);
+        }
+    }
+
+    @Test
     void aPersonsReclassificationSurvivesReloadingTheSameData() throws Exception {
         sale("A1", "2027-01-05", "100.00", "5.00");
         String lineId = client.get(preparer, "/api/periods/" + january + "/lines").get("rows").get(0).get("id").asString();

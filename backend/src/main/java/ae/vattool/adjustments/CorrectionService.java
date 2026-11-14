@@ -145,7 +145,8 @@ public class CorrectionService {
         }
         ReturnVersionView original = returns.find(period.lockedVersionId()).orElseThrow();
         ReturnVersionView baseline = returns.latest(periodId).orElseThrow();
-        RulePackStore.ActivePack pack = packs.forDate(period.periodEnd());
+        // As for any return: the client's rules in force are recorded with the corrected figures.
+        RulePackStore.ActivePack pack = returns.packFor(period);
         RulePackDefinition.Form form = pack.definition().form();
         ReturnService.Computed now = returns.computeNow(period, form);
         Map<String, BigDecimal> vatChanges = new HashMap<>();

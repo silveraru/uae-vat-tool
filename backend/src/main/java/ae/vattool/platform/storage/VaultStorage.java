@@ -1,8 +1,12 @@
 package ae.vattool.platform.storage;
 
 import ae.vattool.platform.crypto.TenantKeys;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -74,6 +78,38 @@ public class VaultStorage {
         return new Stored(key, response.versionId(), sha256(content), content.length, retainUntil);
     }
 
+    /**
+     * As {@link #put(String, byte[], String, LocalDate)}, for a file too large to hold in memory. It is
+     * encrypted to a temporary file, which is streamed to storage and then deleted.
+     */
+    public Stored put(String key, Path content, String contentType, LocalDate retainUntil) {
+        ensureBucket();
+        Path encrypted = null;
+        try {
+            encrypted = Files.createTempFile("vault-", ".enc");
+            keys.encrypt(content, encrypted);
+            var response = s3.putObject(PutObjectRequest.builder()
+                            .bucket(bucket)
+                            .key(key)
+                            .contentType(contentType)
+                            .objectLockMode(lockMode)
+                            .objectLockRetainUntilDate(retainUntil.atStartOfDay().toInstant(ZoneOffset.UTC))
+                            .build(),
+                    RequestBody.fromFile(encrypted));
+            return new Stored(key, response.versionId(), sha256(content), Files.size(content), retainUntil);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        } finally {
+            if (encrypted != null) {
+                try {
+                    Files.deleteIfExists(encrypted);
+                } catch (IOException e) {
+                    // A temporary file left behind is cleaned up by the operating system.
+                }
+            }
+        }
+    }
+
     public byte[] get(String key) {
         return keys.decrypt(getRaw(key));
     }
@@ -133,6 +169,23 @@ public class VaultStorage {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
         } catch (java.security.NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
+        }
+    }
+
+    /** The fingerprint of a file, read in pieces. */
+    public static String sha256(Path file) {
+        try (var in = Files.newInputStream(file)) {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buffer)) > 0) {
+                digest.update(buffer, 0, n);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 

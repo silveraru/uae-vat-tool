@@ -11,6 +11,7 @@ const STATE_TONE: Record<string, string> = {
   PROPOSED: "warn", REJECTED: "bad", SIGNED_OFF: "ok", PROCESSED: "ok", OVERDUE: "bad", "T-2": "bad", "T-5": "warn", "T-10": "warn",
   SUBMITTED: "warn", SETTLED: "ok", RECEIVED: "ok", ACCEPTED: "ok", STALE: "", COMPLETE: "ok", INCOMPLETE: "warn", LATE: "bad", CLOSED: "ok", RESPONDED: "ok",
   DELIVERED: "ok", FAILED: "bad", PENDING: "warn", OK: "ok", MUST_REGISTER: "bad", APPROACHING: "warn", MAY_REGISTER: "warn", BELOW: "", UNVERIFIED: "warn",
+  RECONCILED: "ok", RECONCILED_WITH_WAIVERS: "warn", NOT_RECONCILED: "bad",
 };
 
 /** A status badge. The text carries the meaning, so colour is never the only signal. */

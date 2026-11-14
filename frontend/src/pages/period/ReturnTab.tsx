@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api/client";
-import type { BoxDefinition, BoxValues, Comment, DrillPage, Lineage, ReturnVersion, TaxLine } from "../../api/types";
+import type { BoxDefinition, BoxValues, Comment, DrillPage, Lineage, LineRevision, ReturnVersion, TaxLine } from "../../api/types";
 import { Query } from "../../components/Query";
 import { Badge, ErrorAlert, Field, Money, Pager, useAction } from "../../components/ui";
 import { usePeriod } from "./PeriodLayout";
@@ -126,7 +126,7 @@ function BoxDetail({ box, locale }: { box: BoxDefinition; locale: string }) {
   );
 }
 
-function LineagePanel({ lineId }: { lineId: string }) {
+export function LineagePanel({ lineId }: { lineId: string }) {
   const { t } = useTranslation();
   const q = useQuery({ queryKey: ["lineage", lineId], queryFn: () => api.get<Lineage>(`/lines/${lineId}/lineage`) });
   return (
@@ -141,7 +141,46 @@ function LineagePanel({ lineId }: { lineId: string }) {
                 <small className="muted ltr">SHA-256 {String(l.batch.content_hash)}</small></p>
             ) : <p className="muted">{t("return.noFile")}</p>}
             {l.sourceRow.raw ? <pre className="ltr raw">{JSON.stringify(JSON.parse(String(l.sourceRow.raw)), null, 1)}</pre> : null}
+            <LineHistory logicalLineId={l.line.logicalLineId} />
           </>
+        )}
+      </Query>
+    </div>
+  );
+}
+
+/** Every revision of one line: as loaded, then each reclassification or reload, with who and why. */
+export function LineHistory({ logicalLineId }: { logicalLineId: string }) {
+  const { t } = useTranslation();
+  const q = useQuery({ queryKey: ["line-history", logicalLineId], queryFn: () => api.get<LineRevision[]>(`/lines/${logicalLineId}/history`) });
+  return (
+    <div style={{ marginBlockStart: 12 }}>
+      <h4>{t("lines.history")}</h4>
+      <Query query={q}>
+        {(rows) => (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th className="num">{t("lines.revisionNo")}</th><th>{t("lines.treatment")}</th><th className="num">{t("return.vat")}</th>
+                  <th className="num">{t("lines.recoverable")}</th><th>{t("lines.changedBy")}</th><th>{t("common.reason")}</th><th>{t("common.status")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.line.id}>
+                    <td className="num">{r.line.revision}</td>
+                    <td><Badge value={r.line.treatment} group="treatment" />{r.line.blockedCategory && <><br /><small className="muted">{t("lines.blocked")}: {r.line.blockedCategory}</small></>}</td>
+                    <td className="num"><Money value={r.line.vatAed} /></td>
+                    <td className="num"><Money value={r.line.recoverableVatAed} /></td>
+                    <td>{r.changedByName}<br /><small className="muted">{t(`classifiedBy.${r.line.classifiedBy}`)}</small></td>
+                    <td>{r.line.changeReason ?? (i === 0 ? t("lines.asLoaded") : "–")}</td>
+                    <td>{i === rows.length - 1 ? t("lines.currentRevision") : t("lines.supersededRevision")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Query>
     </div>

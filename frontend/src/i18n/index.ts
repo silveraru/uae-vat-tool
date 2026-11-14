@@ -48,4 +48,9 @@ export function formatDate(value: string | null | undefined): string {
   return value ? value.slice(0, 10) : "–";
 }
 
+/** A local calendar date as YYYY-MM-DD, for date inputs. toISOString would shift it to UTC. */
+export function isoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export default i18n;

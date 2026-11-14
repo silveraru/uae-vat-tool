@@ -1,14 +1,20 @@
 package ae.vattool.ingestion;
 
 import ae.vattool.platform.web.DomainException;
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -69,6 +75,109 @@ public final class TabularFile {
                 rows.add(row);
             }
             return new Parsed(headers, rows);
+        }
+    }
+
+    /**
+     * The rows of a CSV file, read one at a time, for files too large to hold in memory. It parses exactly
+     * as {@link #read} does. Iterating it once reads the file once, so a caller that needs two passes opens it twice.
+     */
+    public static final class CsvRows implements Iterable<Map<String, String>>, AutoCloseable {
+        private final CSVParser parser;
+        private final Set<String> headers = new LinkedHashSet<>();
+
+        private CsvRows(CSVParser parser) {
+            this.parser = parser;
+            parser.getHeaderNames().forEach(h -> headers.add(normalise(h)));
+        }
+
+        public Set<String> headers() {
+            return headers;
+        }
+
+        @Override
+        public Iterator<Map<String, String>> iterator() {
+            Iterator<CSVRecord> records = parser.iterator();
+            return new Iterator<>() {
+                @Override
+                public boolean hasNext() {
+                    try {
+                        return records.hasNext();
+                    } catch (UncheckedIOException | IllegalStateException e) {
+                        throw unreadable(e);
+                    }
+                }
+
+                @Override
+                public Map<String, String> next() {
+                    try {
+                        CSVRecord record = records.next();
+                        Map<String, String> row = new LinkedHashMap<>();
+                        for (String h : parser.getHeaderNames()) {
+                            String value = record.isSet(h) ? record.get(h) : "";
+                            row.put(normalise(h), value == null ? "" : value.trim());
+                        }
+                        return row;
+                    } catch (UncheckedIOException | IllegalStateException e) {
+                        throw unreadable(e);
+                    }
+                }
+            };
+        }
+
+        /** Reads to the end, so a damaged file is refused before any of it is loaded. */
+        public int count() {
+            int n = 0;
+            for (Iterator<Map<String, String>> it = iterator(); it.hasNext(); it.next()) {
+                n++;
+            }
+            return n;
+        }
+
+        @Override
+        public void close() {
+            try {
+                parser.close();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+
+        private static DomainException unreadable(RuntimeException e) {
+            return DomainException.invalid("FILE_UNREADABLE", "The file could not be read: " + e.getMessage());
+        }
+    }
+
+    public static boolean isCsv(String fileName) {
+        String name = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        return name.endsWith(".csv") || name.endsWith(".txt");
+    }
+
+    public static CsvRows openCsv(Path file) {
+        InputStream in = null;
+        try {
+            in = new BufferedInputStream(Files.newInputStream(file));
+            in.mark(3);
+            byte[] start = in.readNBytes(3);
+            if (!hasUtf8Bom(start)) {
+                in.reset();
+            }
+            Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
+            return new CsvRows(CSVFormat.RFC4180.builder().setHeader().setSkipHeaderRecord(true)
+                    .setIgnoreEmptyLines(true).setTrim(true).get().parse(reader));
+        } catch (IOException | RuntimeException e) {
+            // The header could not be read, so nothing will close the file but this.
+            if (in != null) {
+                try {
+                    in.close();
+                } catch (IOException suppressed) {
+                    e.addSuppressed(suppressed);
+                }
+            }
+            if (e instanceof DomainException d) {
+                throw d;
+            }
+            throw DomainException.invalid("FILE_UNREADABLE", "The file could not be read: " + e.getMessage());
         }
     }
 

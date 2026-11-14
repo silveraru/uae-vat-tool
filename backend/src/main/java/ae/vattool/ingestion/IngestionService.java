@@ -7,12 +7,18 @@ import ae.vattool.platform.storage.VaultStorage;
 import ae.vattool.platform.tenancy.RequestContext;
 import ae.vattool.platform.web.DomainException;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -69,8 +75,34 @@ public class IngestionService {
         Templates.checkHeaders(kind, templateVersion, parsed.headers());
         String key = "t/" + RequestContext.requireTenant() + "/raw/" + filerId + "/" + kind + "/"
                 + VaultStorage.sha256(content) + "/" + sanitise(fileName);
-        return load(filerId, kind, templateVersion, channel, fileName, VaultStorage.sha256(content), parsed.rows(),
+        return load(filerId, kind, templateVersion, channel, fileName, VaultStorage.sha256(content), parsed.rows(), parsed.rows().size(),
                 () -> storage.put(key, content, "application/octet-stream", LocalDate.now().plusYears(RAW_RETENTION_YEARS)).key());
+    }
+
+    /**
+     * Loads a file from disk. A CSV is never held in memory: it is read once to check every row parses,
+     * so a damaged file is refused before any of it loads, then read again in chunks. A workbook is still
+     * read whole, so very large files should come as CSV.
+     */
+    public LoadResult loadFile(UUID filerId, Kind kind, String templateVersion, String channel, String fileName, Path file) {
+        if (!TabularFile.isCsv(fileName)) {
+            try {
+                return loadFile(filerId, kind, templateVersion, channel, fileName, Files.readAllBytes(file));
+            } catch (IOException e) {
+                throw DomainException.invalid("FILE_UNREADABLE", "The file could not be read: " + e.getMessage());
+            }
+        }
+        String hash = VaultStorage.sha256(file);
+        int total;
+        try (TabularFile.CsvRows check = TabularFile.openCsv(file)) {
+            Templates.checkHeaders(kind, templateVersion, check.headers());
+            total = check.count();
+        }
+        String key = "t/" + RequestContext.requireTenant() + "/raw/" + filerId + "/" + kind + "/" + hash + "/" + sanitise(fileName);
+        try (TabularFile.CsvRows rows = TabularFile.openCsv(file)) {
+            return load(filerId, kind, templateVersion, channel, fileName, hash, rows, total,
+                    () -> storage.put(key, file, "application/octet-stream", LocalDate.now().plusYears(RAW_RETENTION_YEARS)).key());
+        }
     }
 
     public LoadResult loadRows(UUID filerId, Kind kind, String templateVersion, List<Map<String, String>> payload) {
@@ -83,7 +115,7 @@ public class IngestionService {
         byte[] raw = JSON.writeValueAsBytes(payload);
         String hash = VaultStorage.sha256(raw);
         String key = "t/" + RequestContext.requireTenant() + "/raw/" + filerId + "/" + kind + "/" + hash + "/payload.json";
-        return load(filerId, kind, templateVersion, "API", "api-" + hash.substring(0, 12) + ".json", hash, payload,
+        return load(filerId, kind, templateVersion, "API", "api-" + hash.substring(0, 12) + ".json", hash, payload, payload.size(),
                 () -> storage.put(key, raw, "application/json", LocalDate.now().plusYears(RAW_RETENTION_YEARS)).key());
     }
 
@@ -91,38 +123,53 @@ public class IngestionService {
     LoadResult loadParsed(UUID filerId, Kind kind, String channel, String fileName, byte[] raw, String contentType, List<Map<String, String>> parsedRows) {
         String hash = VaultStorage.sha256(raw);
         String key = "t/" + RequestContext.requireTenant() + "/raw/" + filerId + "/" + kind + "/" + hash + "/" + sanitise(fileName);
-        return load(filerId, kind, Templates.CURRENT_VERSION, channel, fileName, hash, parsedRows,
+        return load(filerId, kind, Templates.CURRENT_VERSION, channel, fileName, hash, parsedRows, parsedRows.size(),
                 () -> storage.put(key, raw, contentType, LocalDate.now().plusYears(RAW_RETENTION_YEARS)).key());
     }
 
     private LoadResult load(UUID filerId, Kind kind, String version, String channel, String fileName, String hash,
-                            List<Map<String, String>> parsedRows, java.util.function.Supplier<String> storeRaw) {
+                            Iterable<Map<String, String>> parsedRows, int total, Supplier<String> storeRaw) {
         LegalEntity filer = requireFiler(filerId);
         Optional<Batch> existing = findByHash(filerId, kind, hash);
         if (existing.isPresent() && "PROCESSED".equals(existing.get().status())) {
             // ING-07: reloading a file already processed changes nothing.
             return new LoadResult(existing.get(), true);
         }
+        long started = System.nanoTime();
         String storageKey = storeRaw.get();
         UUID batchId = existing.map(Batch::id).orElseGet(() -> createBatch(filerId, kind, version, channel, fileName, hash, storageKey));
 
         RowProcessor.Counts counts = new RowProcessor.Counts();
         RowProcessor.FileContext context = new RowProcessor.FileContext(filer, kind, batchId);
-        for (int start = 0; start < parsedRows.size(); start += CHUNK_SIZE) {
-            int from = start;
-            int to = Math.min(start + CHUNK_SIZE, parsedRows.size());
-            tx.executeWithoutResult(s -> rows.processChunk(context, parsedRows.subList(from, to), from + 1, counts));
+        // Rows go to the ledger a chunk at a time, so neither a list nor a stream of rows is ever held whole.
+        List<Map<String, String>> chunk = new ArrayList<>(CHUNK_SIZE);
+        int first = 1;
+        for (Map<String, String> row : parsedRows) {
+            chunk.add(row);
+            if (chunk.size() == CHUNK_SIZE) {
+                processChunk(context, chunk, first, counts);
+                first += chunk.size();
+                chunk = new ArrayList<>(CHUNK_SIZE);
+            }
         }
-        Batch done = tx.execute(s -> finish(batchId, filerId, kind, fileName, hash, parsedRows.size(), counts));
+        if (!chunk.isEmpty()) {
+            processChunk(context, chunk, first, counts);
+        }
+        Batch done = tx.execute(s -> finish(batchId, filerId, kind, fileName, hash, total, counts));
         String tenant = RequestContext.requireTenant().toString();
         metrics.counter("vat.ingest.rows", "tenant", tenant, "result", "loaded").increment(counts.loaded);
         metrics.counter("vat.ingest.rows", "tenant", tenant, "result", "unchanged").increment(counts.unchanged);
         metrics.counter("vat.ingest.rows", "tenant", tenant, "result", "rejected").increment(counts.rejected);
         metrics.counter("vat.ingest.rows", "tenant", tenant, "result", "held").increment(counts.held);
+        metrics.timer("vat.ingest.duration", "tenant", tenant, "kind", kind.name()).record(System.nanoTime() - started, TimeUnit.NANOSECONDS);
         if (kind == Kind.FX) {
             rows.reprocessHeld();
         }
         return new LoadResult(done, false);
+    }
+
+    private void processChunk(RowProcessor.FileContext context, List<Map<String, String>> chunk, int firstRowNo, RowProcessor.Counts counts) {
+        tx.executeWithoutResult(s -> rows.processChunk(context, chunk, firstRowNo, counts));
     }
 
     private UUID createBatch(UUID filerId, Kind kind, String version, String channel, String fileName, String hash, String storageKey) {
@@ -184,6 +231,11 @@ public class IngestionService {
     private Optional<Batch> findByHash(UUID filerId, Kind kind, String hash) {
         return tx.execute(s -> jdbc.sql(Batch.SELECT + " WHERE entity_id = ? AND kind = ? AND content_hash = ?")
                 .params(filerId, kind.name(), hash).query(Batch.class).optional());
+    }
+
+    /** The TRN the filer reports under, for asking the e-invoicing platform about it. */
+    public String filerTrn(UUID filerId) {
+        return requireFiler(filerId).trn();
     }
 
     private LegalEntity requireFiler(UUID id) {

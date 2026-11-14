@@ -29,6 +29,11 @@ spring:
     port: 11025
 
 management:
+  # Health, metrics and the Prometheus scrape are served on their own port, apart from the API, and answer
+  # without a token. Keep that port private: loopback here, the cluster network in production (NFR-14).
+  server:
+    port: 18091
+    address: 127.0.0.1
   endpoints:
     web:
       exposure:

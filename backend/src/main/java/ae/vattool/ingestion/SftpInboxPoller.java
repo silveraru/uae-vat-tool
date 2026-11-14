@@ -83,9 +83,8 @@ public class SftpInboxPoller {
                     continue;
                 }
                 try {
-                    byte[] content = Files.readAllBytes(file);
                     RequestContext.asSystem(tenantId, "sftp-inbox", () -> ingestion.loadFile(
-                            entityId, kind, Templates.CURRENT_VERSION, "SFTP", name, content));
+                            entityId, kind, Templates.CURRENT_VERSION, "SFTP", name, file));
                     move(file, kindDir.resolve("processed"));
                 } catch (RuntimeException e) {
                     log.warn("SFTP file {} failed: {}", file, e.getMessage());

@@ -7,6 +7,7 @@ import { DeadlinesPage } from "../pages/DeadlinesPage";
 import { NewEntityPage } from "../pages/NewEntityPage";
 import { EntityPage } from "../pages/EntityPage";
 import { RulePacksPage } from "../pages/RulePacksPage";
+import { RulePackEditPage, RulePackPage } from "../pages/RulePackPage";
 import { AuditPage } from "../pages/AuditPage";
 import { AnalyticsPage } from "../pages/AnalyticsPage";
 import { AuditCasesPage } from "../pages/AuditCasesPage";
@@ -43,6 +44,8 @@ export function App() {
             <Route path="/entities/new" element={<NewEntityPage />} />
             <Route path="/entities/:id" element={<EntityPage />} />
             <Route path="/rule-packs" element={<RulePacksPage />} />
+            <Route path="/rule-packs/:id" element={<RulePackPage />} />
+            <Route path="/rule-packs/:id/edit" element={<RulePackEditPage />} />
             <Route path="/audit" element={<AuditPage />} />
             <Route path="/practice" element={<PracticePage />} />
             <Route path="/entities/:id/analytics" element={<AnalyticsPage />} />
